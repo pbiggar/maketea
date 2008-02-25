@@ -29,6 +29,7 @@ import Constructors
 import FactoryMethod
 import Fold
 import Util
+import Clpa
 
 main :: IO ()
 main = do
@@ -70,12 +71,13 @@ runMakeTea config grammar includes mixinCode = do
 			transform <- transformClass
 			visitor   <- visitorClass
 			fold      <- foldClass
+			clpa      <- clpaDefinition
 			wildcard  <- wildcardClass
 			factory   <- factoryMethod
-			return (prefix, namespace, contexts, classes, transform, visitor, fold, wildcard, factory)
+			return (prefix, namespace, contexts, classes, transform, visitor, fold, clpa, wildcard, factory)
 		init = initState config grammar mixinCode
 		runMaketea = evalState maketea init
-		(prefix, namespace, contexts, classes, transform, visitor, fold, wildcard, factory) = runMaketea
+		(prefix, namespace, contexts, classes, transform, visitor, fold, clpa, wildcard, factory) = runMaketea
 		commonHeader = unlines $ includes ++ [
 			  "#include <list>"
 			, "#include <string>"
@@ -136,3 +138,4 @@ runMakeTea config grammar includes mixinCode = do
 		, "#include \"" ++ prefix ++ ".h\""
 		, addNamespace $ fold 
 		]
+	writeFile (prefix ++ ".clp") $ clpa
