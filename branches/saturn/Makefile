@@ -12,3 +12,6 @@ clean:
 
 cleanall: clean
 	rm -f maketea
+
+tags: clean
+	ghci -fglasgow-exts *.hs -e :ctags
