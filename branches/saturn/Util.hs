@@ -77,6 +77,9 @@ swap (a, b) = (b, a)
 flattenComma :: [String] -> String
 flattenComma = flattenWith ", "
 
+flattenPipe :: [String] -> String
+flattenPipe = flattenWith "| "
+
 flattenWith :: String -> [String] -> String
 flattenWith sep [] = ""
 flattenWith sep [x] = x
@@ -84,6 +87,9 @@ flattenWith sep (x:xs) = x ++ sep ++ flattenWith sep xs
 
 strToUpper :: String -> String
 strToUpper = map toUpper
+
+strToLower :: String -> String
+strToLower = map toLower
 
 {-
  - Monadic operators

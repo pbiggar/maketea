@@ -20,21 +20,23 @@ import Cpp
 param :: ToClassName a => a -> MakeTeaMonad String 
 param sym = ("_" ++) `fmap` toClassName sym
 
-pred_param :: ToPredName a => a -> MakeTeaMonad String 
-pred_param sym = ((map toLower) . ("phc_" ++)) `fmap` toPredName sym
-
-type_param :: ToTypeName a => a -> MakeTeaMonad String 
-type_param sym = ((map toLower) . ("php_" ++)) `fmap` toTypeName sym
-
 clpaDefinition :: MakeTeaMonad String 
 clpaDefinition = do
+	conjTypes <- withConj $ mapM createConjTypes
+	disjTypes <- withDisj $ mapM createDisjTypes
 	predicates <- withConj $ mapM convertToPredicate
 	templateParams <- withSymbols $ mapM param
 	concreteFolds <- withConj $ mapM concreteFold
 	tokenFolds <- withTokens $ mapM tokenFold
 	recFolds <- withConj $ concatMapM recFold
 	dispatchers <- withDisj $ concatMapM dispatcher
-	return $ ((unlines $ predicates)	++ unlines (map ("% " ++) (lines (unlines
+	return $ (unlines 
+		[ 
+		  unlines conjTypes
+		, unlines disjTypes
+		, unlines predicates
+		]
+		++ unlines (map ("% " ++) (lines (unlines
 		[
 		  "template"
 		, "<" ++ (flattenWith ",\n " $ map ("class " ++) templateParams) ++ ">"
@@ -78,8 +80,7 @@ concreteFold (Conj head body) = do
 
 convertToPredicate :: Rule Conj -> MakeTeaMonad String
 convertToPredicate (Conj head body) = do
-	predName <- pred_param head
-	cn <- toPredName head
+	predName <- toPredName head
 	args <- forM body $ \term -> do
 		argType <- elim termToCLPAParam term
 		let argName = toCLPAVarName term
@@ -118,6 +119,24 @@ dispatcher (Disj head _) = do
 		, "\tassert(0);"
 		, "}\n"
 		]
+
+createConjTypes :: Rule Conj -> MakeTeaMonad String
+createConjTypes (Conj head body) = do
+	typeName <- toTypeName head
+	args <- forM body $ \term -> do
+		argType <- elim (termToCLPAParam) term
+		return argType
+	return $ "type " ++ typeName ++ " ::= " ++ typeName ++ " {" ++ (flattenComma args) ++ "}."
+
+
+createDisjTypes :: Rule Disj -> MakeTeaMonad String
+createDisjTypes (Disj head _) = do
+	typeName <- toTypeName head
+	inst <- concreteInstances head -- TODO should this be allInstances?
+	body <- forM inst $ \term -> do
+		tn <- toTypeName term
+		return tn
+	return $ "type " ++ typeName ++ " ::= \n\t\t  " ++ (flattenPipe (map (++ "\n\t\t" ) body)) ++ "."
 
 recFold :: Rule Conj -> MakeTeaMonad [String]
 recFold (Conj head body) = do 
@@ -177,8 +196,7 @@ termToParam _ m@(Marker _ _) = return "bool"
 
 termToCLPAParam :: Term a -> MakeTeaMonad String
 termToCLPAParam t@(Term lab sym mult) = do
-	list <- getListClass
-	tp <- type_param (Term lab sym Single)
+	tp <- toTypeName (Term lab sym Single)
 	return $ if isVector mult 
 		then tp ++ "_list"
 		else tp
@@ -202,8 +220,8 @@ instance ToPredName (Term NonMarker) where
 	toPredName = termToPredName
 
 symbolToPredName :: Symbol a -> MakeTeaMonad (Name Class)
-symbolToPredName (NonTerminal n) = return n 
-symbolToPredName (Terminal n _) = return n 
+symbolToPredName (NonTerminal n) = return ("phc_" ++ strToLower n) 
+symbolToPredName (Terminal n _) = return ("phc_token_" ++ strToLower n) 
 
 termToPredName :: Term NonMarker -> MakeTeaMonad CType 
 termToPredName (Term _ s m) = do
@@ -259,8 +277,8 @@ instance ToTypeName (Term NonMarker) where
 	toTypeName = termToTypeName
 
 symbolToTypeName :: Symbol a -> MakeTeaMonad (Name Class)
-symbolToTypeName (NonTerminal n) = return n 
-symbolToTypeName (Terminal n _) = return n 
+symbolToTypeName (NonTerminal n) = return ("php_" ++ strToLower n)
+symbolToTypeName (Terminal n _) = return ("php_token_" ++ strToLower n) 
 
 termToTypeName :: Term NonMarker -> MakeTeaMonad CType 
 termToTypeName (Term _ s m) = do
