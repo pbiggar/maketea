@@ -6,6 +6,11 @@
 
 module Clpa where
 
+import Data.Maybe
+import Data.List
+import Data.Char
+import Text.PrettyPrint
+
 import Control.Monad
 import Util
 import DataStructures
@@ -15,14 +20,21 @@ import Cpp
 param :: ToClassName a => a -> MakeTeaMonad String 
 param sym = ("_" ++) `fmap` toClassName sym
 
+pred_param :: ToPredName a => a -> MakeTeaMonad String 
+pred_param sym = ((map toLower) . ("phc_" ++)) `fmap` toPredName sym
+
+type_param :: ToTypeName a => a -> MakeTeaMonad String 
+type_param sym = ((map toLower) . ("php_" ++)) `fmap` toTypeName sym
+
 clpaDefinition :: MakeTeaMonad String 
 clpaDefinition = do
-	templateParams <- withSymbols $ mapM param 
+	predicates <- withConj $ mapM convertToPredicate
+	templateParams <- withSymbols $ mapM param
 	concreteFolds <- withConj $ mapM concreteFold
 	tokenFolds <- withTokens $ mapM tokenFold
 	recFolds <- withConj $ concatMapM recFold
 	dispatchers <- withDisj $ concatMapM dispatcher
-	return $ unlines 
+	return $ ((unlines $ predicates)	++ unlines (map ("% " ++) (lines (unlines
 		[
 		  "template"
 		, "<" ++ (flattenWith ",\n " $ map ("class " ++) templateParams) ++ ">"
@@ -50,7 +62,7 @@ clpaDefinition = do
 		, ""
 		, "template<class T>"
 		, "class Uniform_fold : public Fold<" ++ flattenComma (replicate (length templateParams) "T") ++ "> {};"
-		]
+		]))))
 
 concreteFold :: Rule Conj -> MakeTeaMonad String
 concreteFold (Conj head body) = do
@@ -62,6 +74,19 @@ concreteFold (Conj head body) = do
 		let argName = toVarName term
 		return (argType ++ " " ++ argName) 
 	return $ "virtual " ++ returnType ++ " fold_impl_" ++ fnName ++ "(" ++ flattenComma ((cn ++ "* orig") : args) ++ ") { assert(0); };"
+
+
+convertToPredicate :: Rule Conj -> MakeTeaMonad String
+convertToPredicate (Conj head body) = do
+	predName <- pred_param head
+	cn <- toPredName head
+	args <- forM body $ \term -> do
+		argType <- elim termToCLPAParam term
+		let argName = toCLPAVarName term
+		return (argName ++ ":" ++ argType) 
+	return $ "predicate " ++ predName ++ " (" ++ flattenComma (args) ++ ")."
+
+
 
 tokenFold :: Symbol Terminal -> MakeTeaMonad String
 tokenFold sym = do
@@ -149,3 +174,101 @@ termToParam listSuffix t@(Term lab sym mult) = do
 		then list ++ "<" ++ tp ++ ">" ++ listSuffix
 		else tp
 termToParam _ m@(Marker _ _) = return "bool" 
+
+termToCLPAParam :: Term a -> MakeTeaMonad String
+termToCLPAParam t@(Term lab sym mult) = do
+	list <- getListClass
+	tp <- type_param (Term lab sym Single)
+	return $ if isVector mult 
+		then tp ++ "_list"
+		else tp
+termToCLPAParam m@(Marker _ _) = return "bool" 
+
+
+
+
+{- Turn types into Predicate names -}
+
+class ToPredName a where
+	toPredName :: a -> MakeTeaMonad (Name Class)
+
+instance ToPredName (Symbol a) where
+	toPredName = symbolToPredName
+
+instance ToPredName (Some Symbol) where
+	toPredName = elim symbolToPredName
+
+instance ToPredName (Term NonMarker) where
+	toPredName = termToPredName
+
+symbolToPredName :: Symbol a -> MakeTeaMonad (Name Class)
+symbolToPredName (NonTerminal n) = return n 
+symbolToPredName (Terminal n _) = return n 
+
+termToPredName :: Term NonMarker -> MakeTeaMonad CType 
+termToPredName (Term _ s m) = do
+	cn <- elim symbolToPredName s
+	if isVector m 
+		then do
+			return ("list of " ++ cn)
+		else return cn
+
+
+{- Turn types into variable names -}
+class ToCLPAVarName a where
+	toCLPAVarName :: a -> Name Variable 
+
+instance ToCLPAVarName (Term a) where
+	toCLPAVarName = termToCLPAVarName
+
+instance ToCLPAVarName (Some Term) where
+	toCLPAVarName = elim termToCLPAVarName
+
+instance ToCLPAVarName (Symbol a) where
+	toCLPAVarName = symbolToCLPAVarName
+
+instance ToCLPAVarName (Some Symbol) where
+	toCLPAVarName = elim symbolToCLPAVarName
+
+termToCLPAVarName :: Term a -> Name Variable 
+termToCLPAVarName (Term Nothing s m) 
+	| isVector m = toCLPAVarName s ++ "S" 
+	| otherwise = toCLPAVarName s
+termToCLPAVarName (Term (Just n) _ _) = n
+termToCLPAVarName (Marker Nothing m) = "IS_" ++ (map toUpper m)
+termToCLPAVarName (Marker (Just n) _) = n
+
+symbolToCLPAVarName :: Symbol a -> Name Variable 
+symbolToCLPAVarName (NonTerminal n) = map toUpper n
+symbolToCLPAVarName (Terminal n _) = map toUpper n
+
+
+
+
+{- Turn types into type names -}
+class ToTypeName a where
+	toTypeName :: a -> MakeTeaMonad (Name Class)
+
+instance ToTypeName (Symbol a) where
+	toTypeName = symbolToTypeName
+
+instance ToTypeName (Some Symbol) where
+	toTypeName = elim symbolToTypeName
+
+instance ToTypeName (Term NonMarker) where
+	toTypeName = termToTypeName
+
+symbolToTypeName :: Symbol a -> MakeTeaMonad (Name Class)
+symbolToTypeName (NonTerminal n) = return n 
+symbolToTypeName (Terminal n _) = return n 
+
+termToTypeName :: Term NonMarker -> MakeTeaMonad CType 
+termToTypeName (Term _ s m) = do
+	cn <- elim symbolToTypeName s
+	if isVector m 
+		then do
+			list <- getListClass
+			return (list ++ "<" ++ cn ++ "*>")
+		else return cn
+
+
