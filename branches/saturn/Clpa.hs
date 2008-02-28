@@ -22,6 +22,8 @@ param sym = ("_" ++) `fmap` toClassName sym
 
 clpaDefinition :: MakeTeaMonad String 
 clpaDefinition = do
+	conjForwardDecls <- withConj $ mapM createConjForwardDecls
+	disjForwardDecls <- withDisj $ mapM createDisjForwardDecls
 	conjTypes <- withConj $ mapM createConjTypes
 	disjTypes <- withDisj $ mapM createDisjTypes
 	predicates <- withConj $ mapM convertToPredicate
@@ -31,12 +33,23 @@ clpaDefinition = do
 	recFolds <- withConj $ concatMapM recFold
 	dispatchers <- withDisj $ concatMapM dispatcher
 	return $ (unlines 
-		[ 
-		  unlines conjTypes
-		, unlines disjTypes
+		[
+		  "% Forward declarations for conjunctive types"
+		, unlines conjForwardDecls
+		, ""
+		, "% Forward declarations for disjunctive types"
+		, unlines disjForwardDecls
+		, ""
+		, "% Disjunctive types"
+ 	 	, unlines disjTypes
+		, ""
+		, "% Conjunctive types"
+		, unlines conjTypes
+		, ""
+		, "% Predicates"
 		, unlines predicates
-		]
-		++ unlines (map ("% " ++) (lines (unlines
+		])
+{-		++ unlines (map ("% " ++) (lines (unlines
 		[
 		  "template"
 		, "<" ++ (flattenWith ",\n " $ map ("class " ++) templateParams) ++ ">"
@@ -65,6 +78,7 @@ clpaDefinition = do
 		, "template<class T>"
 		, "class Uniform_fold : public Fold<" ++ flattenComma (replicate (length templateParams) "T") ++ "> {};"
 		]))))
+-}
 
 concreteFold :: Rule Conj -> MakeTeaMonad String
 concreteFold (Conj head body) = do
@@ -128,6 +142,17 @@ createConjTypes (Conj head body) = do
 		return argType
 	return $ "type " ++ typeName ++ " ::= " ++ typeName ++ " {" ++ (flattenComma args) ++ "}."
 
+createConjForwardDecls :: Rule Conj -> MakeTeaMonad String
+createConjForwardDecls (Conj head body) = do
+	typeName <- toTypeName head
+	return $ "type " ++ typeName ++ "."
+
+createDisjForwardDecls :: Rule Disj -> MakeTeaMonad String
+createDisjForwardDecls (Disj head _) = do
+	typeName <- toTypeName head
+	return $ "type " ++ typeName ++ "."
+
+
 
 createDisjTypes :: Rule Disj -> MakeTeaMonad String
 createDisjTypes (Disj head _) = do
@@ -136,6 +161,8 @@ createDisjTypes (Disj head _) = do
 	body <- forM inst $ \term -> do
 		tn <- toTypeName term
 		return tn
+--	if typeName == "php_node" then return ""
+--		else 
 	return $ "type " ++ typeName ++ " ::= \n\t\t  " ++ (flattenPipe (map (++ "\n\t\t" ) body)) ++ "."
 
 recFold :: Rule Conj -> MakeTeaMonad [String]
@@ -198,7 +225,7 @@ termToCLPAParam :: Term a -> MakeTeaMonad String
 termToCLPAParam t@(Term lab sym mult) = do
 	tp <- toTypeName (Term lab sym Single)
 	return $ if isVector mult 
-		then tp ++ "_list"
+		then "list[" ++ tp ++ "]"
 		else tp
 termToCLPAParam m@(Marker _ _) = return "bool" 
 
