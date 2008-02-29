@@ -24,12 +24,12 @@ clpaDefinition = do
 	disjTypes <- withDisj $ mapM createDisjTypes
 	predicates <- withConj $ mapM convertToPredicate
 	return $ (unlines 
-		[
-		  "% Forward declarations for conjunctive types"
-		, unlines conjForwardDecls
-		, ""
-		, "% Forward declarations for disjunctive types"
-		, unlines disjForwardDecls
+		[ ""
+--		, "% Forward declarations for conjunctive types"
+--		, unlines conjForwardDecls
+--		, ""
+--		, "% Forward declarations for disjunctive types"
+--		, unlines disjForwardDecls
 		, ""
 		, "% Disjunctive types"
  	 	, unlines disjTypes
@@ -50,13 +50,6 @@ convertToPredicate (Conj head body) = do
 		return (argName ++ ":" ++ argType) 
 	return $ "predicate " ++ predName ++ " (" ++ flattenComma (args) ++ ")."
 
-createConjTypes :: Rule Conj -> MakeTeaMonad String
-createConjTypes (Conj head body) = do
-	typeName <- toTypeName head
-	args <- forM body $ \term -> do
-		argType <- elim (termToParam) term
-		return argType
-	return $ "type " ++ typeName ++ " ::= " ++ typeName ++ " {" ++ (flattenComma args) ++ "}."
 
 createConjForwardDecls :: Rule Conj -> MakeTeaMonad String
 createConjForwardDecls (Conj head body) = do
@@ -69,16 +62,30 @@ createDisjForwardDecls (Disj head _) = do
 	return $ "type " ++ typeName ++ "."
 
 
+createConjTypes :: Rule Conj -> MakeTeaMonad String
+createConjTypes (Conj head body) = do
+	typeName <- toTypeName head
+	args <- forM body $ \term -> do
+		argType <- elim (termToParam) term
+		return argType
+	return $ "type " ++ typeName ++ " ::= " ++ typeName ++ " {" ++ (flattenComma args) ++ "}."
+
+--		conjString <- forM conjs $ \conj -> do
+--			(Conj symbol conjBody) <- conj
+--			string <- createConjTypes conj
+--			return $ string
+
 createDisjTypes :: Rule Disj -> MakeTeaMonad String
-createDisjTypes (Disj head _) = do
+createDisjTypes (Disj head body) = do
 	typeName <- toTypeName head
 	inst <- concreteInstances head -- TODO should this be allInstances?
 	body <- forM inst $ \term -> do
 		tn <- toTypeName term
-		return tn
---	if typeName == "php_node" then return ""
---		else 
+		conjs <- withConj $ mapM createConjTypes
+		tupleConjs <- withConj $ 
+		return $ tn
 	return $ "type " ++ typeName ++ " ::= \n\t\t  " ++ (flattenPipe (map (++ "\n\t\t" ) body)) ++ "."
+
 
 termToParam :: Term a -> MakeTeaMonad String
 termToParam t@(Term lab sym mult) = do

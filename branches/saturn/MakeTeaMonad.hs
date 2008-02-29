@@ -173,6 +173,9 @@ tokens = catMaybes . map (elim f)
 conjBody :: Rule Conj -> [Some Term]
 conjBody (Conj _ body) = body
 
+disjBody :: Rule Disj  -> [Some Symbol]
+disjBody (Disj _ body) = body
+
 nonMarkers :: [Some Term] -> [Term NonMarker]
 nonMarkers = catMaybes . map (elim f) 
 	where
