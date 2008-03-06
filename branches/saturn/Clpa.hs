@@ -70,6 +70,12 @@ createConjTypes (Conj head body) = do
 		return argType
 	return $ "type " ++ typeName ++ " ::= " ++ typeName ++ " {" ++ (flattenComma args) ++ "}."
 
+filterConjTypes :: Name Class -> Rule Conj -> MakeTeaMonad Bool
+filterConjTypes name (Conj head body) = do
+	tn <- toTypeName head
+	return (name == tn)
+
+
 --		conjString <- forM conjs $ \conj -> do
 --			(Conj symbol conjBody) <- conj
 --			string <- createConjTypes conj
@@ -81,10 +87,10 @@ createDisjTypes (Disj head body) = do
 	inst <- concreteInstances head -- TODO should this be allInstances?
 	body <- forM inst $ \term -> do
 		tn <- toTypeName term
-		conjs <- withConj $ mapM createConjTypes
-		tupleConjs <- withConj $ 
-		return $ tn
-	return $ "type " ++ typeName ++ " ::= \n\t\t  " ++ (flattenPipe (map (++ "\n\t\t" ) body)) ++ "."
+		conjs <- withConj $ filterM (filterConjTypes tn)
+		strs <- mapM createConjTypes conjs
+		return $ flattenWith "" strs
+	return $ "type " ++ typeName ++ " ::= \n\t\t  " ++ (flattenPipe (map (++ "\n\t\t" ) (filter (/= "") body))) ++ "."
 
 
 termToParam :: Term a -> MakeTeaMonad String
