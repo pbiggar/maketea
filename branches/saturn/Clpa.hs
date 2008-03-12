@@ -20,22 +20,29 @@ clpaDefinition :: MakeTeaMonad String
 clpaDefinition = do
 	conjForwardDecls <- withConj $ mapM createConjForwardDecls
 	disjForwardDecls <- withDisj $ mapM createDisjForwardDecls
+	tokenDecls <- withTokens $ mapM createTokenDecls
 	conjTypes <- withConj $ mapM createConjTypes
 	disjTypes <- withDisj $ mapM createDisjTypes
 	predicates <- withConj $ mapM convertToPredicate
 	return $ (unlines 
 		[ ""
---		, "% Forward declarations for conjunctive types"
---		, unlines conjForwardDecls
---		, ""
---		, "% Forward declarations for disjunctive types"
---		, unlines disjForwardDecls
+		, "% Type not supplied by Saturn"
+		, "type null."
 		, ""
-		, "% Disjunctive types"
- 	 	, unlines disjTypes
+		, "% Forward declarations for conjunctive types"
+		, unlines conjForwardDecls
+		, ""
+		, "% Forward declarations for disjunctive types"
+		, unlines disjForwardDecls
+		, ""
+		, "% Token declarations"
+		, unlines tokenDecls
 		, ""
 		, "% Conjunctive types"
 		, unlines conjTypes
+		, ""
+		, "% Disjunctive types"
+ 	 	, unlines (reverse disjTypes)
 		, ""
 		, "% Predicates"
 		, unlines predicates
@@ -61,6 +68,18 @@ createDisjForwardDecls (Disj head _) = do
 	typeName <- toTypeName head
 	return $ "type " ++ typeName ++ "."
 
+createTokenDecls :: Symbol Terminal -> MakeTeaMonad String
+createTokenDecls (Terminal name ctype) = do
+	typeName <- toTypeName (Terminal name ctype)
+	return $ "type " ++ typeName ++ " ::= c_" ++ typeName ++ " { " ++ (toClpaPrimType ctype) ++ " } ."
+
+toClpaPrimType :: Maybe String -> String
+toClpaPrimType (Just "String*") = "string"
+toClpaPrimType (Just "long") = "int"
+toClpaPrimType (Just "bool") = "bool"
+toClpaPrimType (Just "double") = "float"
+toClpaPrimType (Just "") = "null"
+toClpaPrimType Nothing = "null"
 
 createConjTypes :: Rule Conj -> MakeTeaMonad String
 createConjTypes (Conj head body) = do
@@ -68,7 +87,7 @@ createConjTypes (Conj head body) = do
 	args <- forM body $ \term -> do
 		argType <- elim (termToParam) term
 		return argType
-	return $ "type " ++ typeName ++ " ::= " ++ typeName ++ " {" ++ (flattenComma args) ++ "}."
+	return $ "type " ++ typeName ++ " ::= c_" ++ typeName ++ " {" ++ (flattenComma args) ++ "}."
 
 filterConjTypes :: Name Class -> Rule Conj -> MakeTeaMonad Bool
 filterConjTypes name (Conj head body) = do
@@ -76,20 +95,13 @@ filterConjTypes name (Conj head body) = do
 	return (name == tn)
 
 
---		conjString <- forM conjs $ \conj -> do
---			(Conj symbol conjBody) <- conj
---			string <- createConjTypes conj
---			return $ string
-
 createDisjTypes :: Rule Disj -> MakeTeaMonad String
 createDisjTypes (Disj head body) = do
 	typeName <- toTypeName head
 	inst <- concreteInstances head -- TODO should this be allInstances?
 	body <- forM inst $ \term -> do
 		tn <- toTypeName term
-		conjs <- withConj $ filterM (filterConjTypes tn)
-		strs <- mapM createConjTypes conjs
-		return $ flattenWith "" strs
+		return $ ("c_" ++ typeName ++ "_" ++ tn ++ " { " ++ tn ++ " } ")
 	return $ "type " ++ typeName ++ " ::= \n\t\t  " ++ (flattenPipe (map (++ "\n\t\t" ) (filter (/= "") body))) ++ "."
 
 
@@ -151,9 +163,9 @@ termToVarName :: Term a -> Name Variable
 termToVarName (Term Nothing s m) 
 	| isVector m = toVarName s ++ "S" 
 	| otherwise = toVarName s
-termToVarName (Term (Just n) _ _) = n
+termToVarName (Term (Just n) _ _) = map toUpper n
 termToVarName (Marker Nothing m) = "IS_" ++ (map toUpper m)
-termToVarName (Marker (Just n) _) = n
+termToVarName (Marker (Just n) _) = map toUpper n
 
 symbolToVarName :: Symbol a -> Name Variable 
 symbolToVarName (NonTerminal n) = map toUpper n
@@ -176,7 +188,7 @@ instance ToTypeName (Term NonMarker) where
 
 symbolToTypeName :: Symbol a -> MakeTeaMonad (Name Class)
 symbolToTypeName (NonTerminal n) = return ("php_" ++ strToLower n)
-symbolToTypeName (Terminal n _) = return ("php_token_" ++ strToLower n) 
+symbolToTypeName (Terminal n _) = return ("php_t_" ++ strToLower n) 
 
 termToTypeName :: Term NonMarker -> MakeTeaMonad CType 
 termToTypeName (Term _ s m) = do
