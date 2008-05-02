@@ -4,6 +4,9 @@
  - License: GNU General Public License 2.0
  -}
 
+-- TODO:
+--		anything nullable (is_option?) should be Maybe
+
 module Clpa where
 
 import Data.Maybe
@@ -23,7 +26,8 @@ clpaDefinition = do
 	tokenDecls <- withTokens $ mapM createTokenDecls
 	conjTypes <- withConj $ mapM createConjTypes
 	disjTypes <- withDisj $ mapM createDisjTypes
-	predicates <- withConj $ mapM convertToPredicate
+	conjPreds <- withConj $ mapM createConjPreds
+	tokenPreds <- withTokens $ mapM createTokenPreds
 	return $ (unlines 
 		[ ""
 		, "% Type not supplied by Saturn"
@@ -45,17 +49,27 @@ clpaDefinition = do
  	 	, unlines (reverse disjTypes)
 		, ""
 		, "% Predicates"
-		, unlines predicates
+		, unlines conjPreds
+		, unlines tokenPreds
 		])
 
-convertToPredicate :: Rule Conj -> MakeTeaMonad String
-convertToPredicate (Conj head body) = do
+createConjPreds :: Rule Conj -> MakeTeaMonad String
+createConjPreds (Conj head body) = do
 	predName <- toPredName head
+	typeName <- toTypeName head
 	args <- forM body $ \term -> do
 		argType <- elim termToParam term
 		let argName = toVarName term
 		return (argName ++ ":" ++ argType) 
-	return $ "predicate " ++ predName ++ " (" ++ flattenComma (args) ++ ")."
+	return $ if (length args == 0) 
+				then "predicate " ++ predName ++ " (ID:" ++ typeName ++ ")."
+				else "predicate " ++ predName ++ " (ID:" ++ typeName ++ ", " ++ flattenComma (args) ++ ")."
+
+createTokenPreds :: Symbol Terminal -> MakeTeaMonad String
+createTokenPreds (Terminal name ctype) = do
+	typeName <- toTypeName (Terminal name ctype)
+	predName <- toPredName (Terminal name ctype)
+	return $ "predicate " ++ predName ++ " (ID:" ++ typeName ++ ", " ++ (toClpaPrimType ctype) ++ ")."
 
 
 createConjForwardDecls :: Rule Conj -> MakeTeaMonad String
@@ -79,7 +93,7 @@ toClpaPrimType (Just "long") = "int"
 toClpaPrimType (Just "bool") = "bool"
 toClpaPrimType (Just "double") = "float"
 toClpaPrimType (Just "") = "null"
-toClpaPrimType Nothing = "null"
+toClpaPrimType Nothing = "string"
 
 createConjTypes :: Rule Conj -> MakeTeaMonad String
 createConjTypes (Conj head body) = do
@@ -87,7 +101,9 @@ createConjTypes (Conj head body) = do
 	args <- forM body $ \term -> do
 		argType <- elim (termToParam) term
 		return argType
-	return $ "type " ++ typeName ++ " ::= c_" ++ typeName ++ " {" ++ (flattenComma args) ++ "}."
+	return $ if (length args == 0)
+				then "type " ++ typeName ++ " = null." -- TODO: this probably isn't right, but its OK for now.
+				else "type " ++ typeName ++ " ::= c_" ++ typeName ++ " {" ++ (flattenComma args) ++ "}."
 
 filterConjTypes :: Name Class -> Rule Conj -> MakeTeaMonad Bool
 filterConjTypes name (Conj head body) = do
@@ -131,8 +147,8 @@ instance ToPredName (Term NonMarker) where
 	toPredName = termToPredName
 
 symbolToPredName :: Symbol a -> MakeTeaMonad (Name Class) -- TODO Class?
-symbolToPredName (NonTerminal n) = return ("phc_" ++ strToLower n) 
-symbolToPredName (Terminal n _) = return ("phc_token_" ++ strToLower n) 
+symbolToPredName (NonTerminal n) = return ("ast_" ++ n) 
+symbolToPredName (Terminal n _) = return ("ast_" ++ n) 
 
 termToPredName :: Term NonMarker -> MakeTeaMonad CType 
 termToPredName (Term _ s m) = do
