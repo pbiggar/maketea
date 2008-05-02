@@ -141,4 +141,4 @@ runMakeTea config grammar includes mixinCode = do
 		, "#include \"" ++ prefix ++ ".h\""
 		, addNamespace $ fold 
 		]
-	writeFile (prefix ++ ".clp") $ clpa
+	writeFile (outputDir ++ "/" ++ prefix ++ ".clp") $ clpa
