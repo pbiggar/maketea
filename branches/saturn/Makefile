@@ -13,5 +13,6 @@ clean:
 cleanall: clean
 	rm -f maketea
 
+# TODO: clean is important to avoid the 'module 'x' is not interpreted' error.
 tags: clean
 	ghci -fglasgow-exts *.hs -e :ctags
