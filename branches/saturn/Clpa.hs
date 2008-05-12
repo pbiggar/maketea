@@ -32,6 +32,7 @@ clpaDefinition = do
 		[ ""
 		, "% Type not supplied by Saturn"
 		, "type null."
+		, "type id = int."
 		, ""
 		, "% Forward declarations for conjunctive types"
 		, unlines conjForwardDecls
@@ -58,7 +59,7 @@ createConjPreds (Conj head body) = do
 	predName <- toPredName head
 	typeName <- toTypeName head
 	args <- forM body $ \term -> do
-		argType <- elim termToParam term
+		argType <- elim termToTypeName term
 		let argName = toVarName term
 		return (argName ++ ":" ++ argType) 
 	return $ if (length args == 0) 
@@ -69,7 +70,7 @@ createTokenPreds :: Symbol Terminal -> MakeTeaMonad String
 createTokenPreds (Terminal name ctype) = do
 	typeName <- toTypeName (Terminal name ctype)
 	predName <- toPredName (Terminal name ctype)
-	return $ "predicate " ++ predName ++ " (ID:" ++ typeName ++ ", " ++ (toClpaPrimType ctype) ++ ")."
+	return $ "predicate " ++ predName ++ " (ID:" ++ typeName ++ ", VALUE:" ++ (toClpaPrimType ctype) ++ ")."
 
 
 createConjForwardDecls :: Rule Conj -> MakeTeaMonad String
@@ -85,7 +86,7 @@ createDisjForwardDecls (Disj head _) = do
 createTokenDecls :: Symbol Terminal -> MakeTeaMonad String
 createTokenDecls (Terminal name ctype) = do
 	typeName <- toTypeName (Terminal name ctype)
-	return $ "type " ++ typeName ++ " ::= c_" ++ typeName ++ " { " ++ (toClpaPrimType ctype) ++ " } ."
+	return $ "type " ++ typeName ++ " ::= " ++ typeName ++ "_id {id}."
 
 toClpaPrimType :: Maybe String -> String
 toClpaPrimType (Just "String*") = "string"
@@ -99,11 +100,9 @@ createConjTypes :: Rule Conj -> MakeTeaMonad String
 createConjTypes (Conj head body) = do
 	typeName <- toTypeName head
 	args <- forM body $ \term -> do
-		argType <- elim (termToParam) term
+		argType <- elim (termToTypeName) term
 		return argType
-	return $ if (length args == 0)
-				then "type " ++ typeName ++ " = null." -- TODO: this probably isn't right, but its OK for now.
-				else "type " ++ typeName ++ " ::= c_" ++ typeName ++ " {" ++ (flattenComma args) ++ "}."
+	return $ "type " ++ typeName ++ " ::= " ++ typeName ++ "_id {id}."
 
 filterConjTypes :: Name Class -> Rule Conj -> MakeTeaMonad Bool
 filterConjTypes name (Conj head body) = do
@@ -116,20 +115,9 @@ createDisjTypes (Disj head body) = do
 	typeName <- toTypeName head
 	inst <- concreteInstances head -- TODO should this be allInstances?
 	body <- forM inst $ \term -> do
-		tn <- toTypeName term
-		return $ ("c_" ++ typeName ++ "_" ++ tn ++ " { " ++ tn ++ " } ")
+		tn <- toTypeName term -- TODO: remove the php from the middle here, that'll get tedious
+		return $ (typeName ++ "_" ++ tn ++ "_id { " ++ tn ++ " } ")
 	return $ "type " ++ typeName ++ " ::= \n\t\t  " ++ (flattenPipe (map (++ "\n\t\t" ) (filter (/= "") body))) ++ "."
-
-
-termToParam :: Term a -> MakeTeaMonad String
-termToParam t@(Term lab sym mult) = do
-	tp <- toTypeName (Term lab sym Single)
-	return $ if isVector mult 
-		then "list[" ++ tp ++ "]"
-		else tp
-termToParam m@(Marker _ _) = return "bool" 
-
-
 
 
 {- Turn types into Predicate names -}
@@ -155,7 +143,7 @@ termToPredName (Term _ s m) = do
 	cn <- elim symbolToPredName s
 	if isVector m 
 		then do
-			return ("list of " ++ cn)
+			error ("unreachable")
 		else return cn
 
 
@@ -203,13 +191,19 @@ instance ToTypeName (Term NonMarker) where
 	toTypeName = termToTypeName
 
 symbolToTypeName :: Symbol a -> MakeTeaMonad (Name Class)
-symbolToTypeName (NonTerminal n) = return ("php_" ++ strToLower n)
-symbolToTypeName (Terminal n _) = return ("php_t_" ++ strToLower n) 
+symbolToTypeName (NonTerminal n) = return ("t_ast_" ++ n)
+symbolToTypeName (Terminal n _) = return ("t_ast_" ++ n) 
+--symbolToTypeName (NonTerminal n) = return "id"
+--symbolToTypeName (Terminal n _) = return "id"
 
-termToTypeName :: Term NonMarker -> MakeTeaMonad CType 
+termToTypeName :: Term a -> MakeTeaMonad CType 
 termToTypeName (Term _ s m) = do
 	cn <- elim symbolToTypeName s
-	if isVector m 
-		then do
-			return ("list [" ++ cn ++ "]")
-		else return cn
+	case m of
+		Vector		-> return ("list[" ++ cn ++ "]")
+		Optional		-> return ("maybe[" ++ cn ++ "]")
+		VectorOpt	-> return ("list[maybe[" ++ cn ++ "]]")
+		OptVector	-> return ("maybe[list[" ++ cn ++ "]]")
+		otherwise	-> return cn
+
+termToTypeName m@(Marker _ _) = return "bool" 
