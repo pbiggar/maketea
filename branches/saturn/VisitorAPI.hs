@@ -36,6 +36,7 @@ visitorClass = do
 	let destructor = defMethod ("", "~Visitor") [] []
 	-- unparser support
 	let visit_marker = defMethod ("void", "visit_marker") [("char const*", "name"), ("bool", "value")] [] 
+	let visit_type = defMethod ("void", "visit_type") [("char const*", "name_space"), ("char const*", "type_id")] []
 	let visit_null = defMethod ("void", "visit_null") [("char const*", "name_space"), ("char const*", "type_id")] []
 	let visit_null_list = defMethod ("void", "visit_null_list") [("char const*", "name_space"), ("char const*", "type_id")] []
 	let pre_list = defMethod ("void", "pre_list") [("char const*", "name_space"), ("char const*", "type_id"), ("int", "size")] [] 
@@ -47,7 +48,7 @@ visitorClass = do
 			, Section ["Invoked after the children have been visited"] Public post
 			, Section ["Visit the children of a node"] Public children
 			, Section ["Tokens don't have children, so these methods do nothing by default"] Public children_t
-			, Section ["Unparser support"] Public [visit_marker, visit_null, visit_null_list, pre_list, post_list]
+			, Section ["Unparser support"] Public [visit_marker, visit_type, visit_null, visit_null_list, pre_list, post_list]
 			, Section ["Invoke the chain of pre-visit methods along the inheritance hierachy","Do not override unless you know what you are doing"] Public pre_chain 
 			, Section ["Invoke the chain of post-visit methods along the inheritance hierarchy","(invoked in opposite order to the pre-chain)","Do not override unless you know what you are doing"] Public post_chain 
 			, Section ["Call the pre-chain, visit children and post-chain in order","Do not override unless you know what you are doing"] Public visits
@@ -97,7 +98,8 @@ visit t@(Term _ s m) | isVector m = do
 		, "}"
 		]
 	let visitS = defMethod decl' args' [
-		  "if(in == NULL)"
+		  "visit_type(\"" ++ ns' ++ "\", \"" ++ cn' ++ "\");"
+		, "if(in == NULL)"
 		, "\tvisit_null(\"" ++ ns' ++ "\", \"" ++ cn' ++ "\");"
 		, "else"
 		, "{"
@@ -123,7 +125,8 @@ visit t@(Term _ s m) | not (isVector m) = do
 	let decl = ("void", termToVisitor t)
 	let args = [(cn ++ "*", "in")]
 	let body = [
-		  "if(in == NULL)"
+		  "visit_type(\"" ++ ns' ++ "\", \"" ++ cn ++ "\");"
+		, "if(in == NULL)"
 		, "\tvisit_null(\"" ++ ns' ++ "\", \"" ++ cn ++ "\");"
 		, "else"
 		, "{"
