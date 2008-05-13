@@ -352,6 +352,14 @@ isVector Vector = True
 isVector VectorOpt = True
 isVector OptVector = True
 
+isOptional :: Multiplicity -> Bool
+isOptional Single = False
+isOptional Optional = True
+isOptional Vector = False
+isOptional VectorOpt = False -- list of maybes
+isOptional OptVector = True -- maybe list
+
+
 {-
  - All concrete symbols (that is, non-terminal symbols that are defined as a
  - conjunction, and terminal symbols) in the grammar

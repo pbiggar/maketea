@@ -37,10 +37,11 @@ visitorClass = do
 	-- unparser support
 	let visit_marker = defMethod ("void", "visit_marker") [("char const*", "name"), ("bool", "value")] [] 
 	let visit_type = defMethod ("void", "visit_type") [("char const*", "name_space"), ("char const*", "type_id")] []
+	let visit_optional = defMethod ("void", "visit_optional") [("bool", "is_null")] []
 	let visit_null = defMethod ("void", "visit_null") [("char const*", "name_space"), ("char const*", "type_id")] []
 	let visit_null_list = defMethod ("void", "visit_null_list") [("char const*", "name_space"), ("char const*", "type_id")] []
-	let pre_list = defMethod ("void", "pre_list") [("char const*", "name_space"), ("char const*", "type_id"), ("int", "size")] [] 
-	let post_list = defMethod ("void", "post_list") [("char const*", "name_space"), ("char const*", "type_id"), ("int", "size")] []
+	let pre_list = defMethod ("void", "pre_list") [("char const*", "name_space"), ("char const*", "type_id"), ("int", "size"), ("bool", "nullable_elements")] [] 
+	let post_list = defMethod ("void", "post_list") [("char const*", "name_space"), ("char const*", "type_id"), ("int", "size"), ("bool", "nullable_elements")] [] 
 	return $ (emptyClassNoID "Visitor") {
 			sections = [
 		  	  Section [] Public [destructor] 
@@ -48,7 +49,7 @@ visitorClass = do
 			, Section ["Invoked after the children have been visited"] Public post
 			, Section ["Visit the children of a node"] Public children
 			, Section ["Tokens don't have children, so these methods do nothing by default"] Public children_t
-			, Section ["Unparser support"] Public [visit_marker, visit_type, visit_null, visit_null_list, pre_list, post_list]
+			, Section ["Unparser support"] Public [visit_marker, visit_type, visit_optional, visit_null, visit_null_list, pre_list, post_list]
 			, Section ["Invoke the chain of pre-visit methods along the inheritance hierachy","Do not override unless you know what you are doing"] Public pre_chain 
 			, Section ["Invoke the chain of post-visit methods along the inheritance hierarchy","(invoked in opposite order to the pre-chain)","Do not override unless you know what you are doing"] Public post_chain 
 			, Section ["Call the pre-chain, visit children and post-chain in order","Do not override unless you know what you are doing"] Public visits
@@ -75,6 +76,9 @@ visit t@(Term _ s m) | isVector m = do
 	let t' = Term undefined s Single
 	cn' <- toClassName t'
 	ns <- getNamespace
+	let nullable = case m of 
+						VectorOpt -> "true"
+						otherwise -> "false"
 	let ns' = case ns of
 				Nothing -> ""
 				(Just name) -> name
@@ -87,14 +91,14 @@ visit t@(Term _ s m) | isVector m = do
 		, "\tvisit_null_list(\"" ++ ns' ++ "\", \"" ++ cn' ++ "\");"
 		, "else"
 		, "{"
-		, "\tpre_list(\"" ++ ns' ++ "\", \"" ++ cn' ++ "\", in->size());"
+		, "\tpre_list(\"" ++ ns' ++ "\", \"" ++ cn' ++ "\", in->size(), " ++ nullable ++ ");"
 		, ""
 		, "\tfor(i = in->begin(); i != in->end(); i++)"
 		, "\t{"
 		, "\t\tvisit_" ++ toVarName s ++ "(*i);"
 		, "\t}"
 		, ""
-		, "\tpost_list(\"" ++ ns' ++ "\", \"" ++ cn' ++ "\", in->size());"
+		, "\tpost_list(\"" ++ ns' ++ "\", \"" ++ cn' ++ "\", in->size(), " ++ nullable ++ ");"
 		, "}"
 		]
 	let visitS = defMethod decl' args' [
@@ -175,7 +179,9 @@ chPublic (Conj nt body) = do
 	let args = [(cn ++ "*", "in")]
 	let 
 		f :: Term a -> String
-		f t@(Term _ _ _) = termToVisitor t ++ "(in->" ++ toVarName t ++ ");"
+		f t@(Term _ _ m)
+			| isOptional m = "visit_optional (in->" ++ toVarName t ++ " == NULL);\n\t" ++ termToVisitor t ++ "(in->" ++ toVarName t ++ ");"
+			| otherwise		= termToVisitor t ++ "(in->" ++ toVarName t ++ ");"
 		f m@(Marker _ _) = "visit_marker(\"" ++ toVarName m ++ "\", in->" ++ toVarName m ++ ");"
 	return $ defMethod decl args (map (elim f) body)
 
