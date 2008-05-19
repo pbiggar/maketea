@@ -28,8 +28,9 @@ clpaDefinition = do
 	disjTypes <- withDisj $ mapM createDisjTypes
 	conjPreds <- withConj $ mapM createConjPreds
 	tokenPreds <- withTokens $ mapM createTokenPreds
+	prefix <- getPrefix
 	return $ (unlines 
-		[ "session ast (PROG:string)."
+		[ "session " ++ prefix ++ " (PROG:string)."
 		, ""
 		, "% Type not supplied by Saturn"
 		, "type null."
@@ -54,6 +55,14 @@ clpaDefinition = do
 		, unlines conjPreds
 		, unlines tokenPreds
 		])
+
+getPrefix :: MakeTeaMonad String
+getPrefix = do
+	ns <- getNamespace
+	let ns' = case ns of
+				Nothing -> ""
+				(Just name) -> map toLower name
+	return ns'
 
 createConjPreds :: Rule Conj -> MakeTeaMonad String
 createConjPreds (Conj head body) = do
@@ -116,7 +125,7 @@ createDisjTypes (Disj head body) = do
 	typeName <- toTypeName head
 	inst <- concreteInstances head -- TODO should this be allInstances?
 	body <- forM inst $ \term -> do
-		tn <- toTypeName term -- TODO: remove the php from the middle here, that'll get tedious
+		tn <- toTypeName term
 		return $ (typeName ++ "_" ++ tn ++ "_id { " ++ tn ++ " } ")
 	return $ "type " ++ typeName ++ " ::= \n\t\t  " ++ (flattenPipe (map (++ "\n\t\t" ) (filter (/= "") body))) ++ "."
 
@@ -136,8 +145,12 @@ instance ToPredName (Term NonMarker) where
 	toPredName = termToPredName
 
 symbolToPredName :: Symbol a -> MakeTeaMonad (Name Class) -- TODO Class?
-symbolToPredName (NonTerminal n) = return ("ast_" ++ n) 
-symbolToPredName (Terminal n _) = return ("ast_" ++ n) 
+symbolToPredName (NonTerminal n) = do
+	prefix <- getPrefix
+	return (prefix ++ "_" ++ n) 
+symbolToPredName (Terminal n _) = do 
+	prefix <- getPrefix
+	return (prefix ++ "_" ++ n) 
 
 termToPredName :: Term NonMarker -> MakeTeaMonad CType 
 termToPredName (Term _ s m) = do
@@ -192,10 +205,12 @@ instance ToTypeName (Term NonMarker) where
 	toTypeName = termToTypeName
 
 symbolToTypeName :: Symbol a -> MakeTeaMonad (Name Class)
-symbolToTypeName (NonTerminal n) = return ("t_ast_" ++ n)
-symbolToTypeName (Terminal n _) = return ("t_ast_" ++ n) 
---symbolToTypeName (NonTerminal n) = return "id"
---symbolToTypeName (Terminal n _) = return "id"
+symbolToTypeName (NonTerminal n) = do
+	prefix <- getPrefix
+	return ("t_" ++ prefix ++ "_" ++ n)
+symbolToTypeName (Terminal n _) = do
+	prefix <- getPrefix
+	return ("t_" ++ prefix ++ "_" ++ n) 
 
 termToTypeName :: Term a -> MakeTeaMonad CType 
 termToTypeName (Term _ s m) = do
