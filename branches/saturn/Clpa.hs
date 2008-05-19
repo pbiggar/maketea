@@ -29,7 +29,8 @@ clpaDefinition = do
 	conjPreds <- withConj $ mapM createConjPreds
 	tokenPreds <- withTokens $ mapM createTokenPreds
 	return $ (unlines 
-		[ ""
+		[ "session ast (PROG:string)."
+		, ""
 		, "% Type not supplied by Saturn"
 		, "type null."
 		, "type id = int."
