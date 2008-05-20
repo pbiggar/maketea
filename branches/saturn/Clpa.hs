@@ -96,7 +96,8 @@ createDisjForwardDecls (Disj head _) = do
 createTokenDecls :: Symbol Terminal -> MakeTeaMonad String
 createTokenDecls (Terminal name ctype) = do
 	typeName <- toTypeName (Terminal name ctype)
-	return $ "type " ++ typeName ++ " ::= " ++ typeName ++ "_id {id}."
+	typeConstructor <- toConstructor (Terminal name ctype)
+	return $ "type " ++ typeName ++ " ::= " ++ typeConstructor ++ " { id }."
 
 toClpaPrimType :: Maybe String -> String
 toClpaPrimType (Just "String*") = "string"
@@ -108,30 +109,37 @@ toClpaPrimType Nothing = "string"
 
 createConjTypes :: Rule Conj -> MakeTeaMonad String
 createConjTypes (Conj head body) = do
+	constructorName <- toConstructor head
 	typeName <- toTypeName head
 	args <- forM body $ \term -> do
 		argType <- elim (termToTypeName) term
 		return argType
-	return $ "type " ++ typeName ++ " ::= " ++ typeName ++ "_id {id}."
+	return $ "type " ++ typeName ++ " ::= " ++ constructorName ++ " { id }."
 
 filterConjTypes :: Name Class -> Rule Conj -> MakeTeaMonad Bool
 filterConjTypes name (Conj head body) = do
 	tn <- toTypeName head
 	return (name == tn)
 
-removeT_ :: String -> String
-removeT_ = drop 2
-
 lowerFirstChar :: String -> String
 lowerFirstChar (n:ns) = ((toLower n):ns)
+
+checkForKeywords :: String -> String -> String
+checkForKeywords n prefix =
+	let keywords = ["type", "predicate", "session", "analyze", "using", "import"]
+	in 
+		if (elem n keywords) then checkForKeywords (prefix ++ "_" ++ n) prefix
+		else n
 
 createDisjTypes :: Rule Disj -> MakeTeaMonad String
 createDisjTypes (Disj head body) = do
 	typeName <- toTypeName head
+	baseName <- toDisjBaseName head
 	inst <- concreteInstances head -- TODO should this be allInstances?
 	body <- forM inst $ \term -> do
 		tn <- toTypeName term
-		return $ (((lowerFirstChar . removeT_) typeName) ++ "_" ++ (removeT_ tn) ++ "_id { " ++ tn ++ " } ")
+		subName <- toDisjSubName term
+		return $ (baseName ++ "_" ++ subName ++ " { " ++ tn ++ " } ")
 	return $ "type " ++ typeName ++ " ::= \n\t\t  " ++ (flattenPipe (map (++ "\n\t\t" ) (filter (/= "") body))) ++ "."
 
 
@@ -150,8 +158,10 @@ instance ToPredName (Term NonMarker) where
 	toPredName = termToPredName
 
 symbolToPredName :: Symbol a -> MakeTeaMonad (Name Class) -- TODO Class?
-symbolToPredName (NonTerminal n) = do return (lowerFirstChar n) 
-symbolToPredName (Terminal n _) = do return (lowerFirstChar n) 
+symbolToPredName (NonTerminal n) = do
+	return (checkForKeywords (lowerFirstChar (n)) "p")
+symbolToPredName (Terminal n _) = do
+	return (checkForKeywords (lowerFirstChar (n)) "p")
 
 
 
@@ -223,3 +233,93 @@ termToTypeName (Term _ s m) = do
 		otherwise	-> return cn
 
 termToTypeName m@(Marker _ _) = return "bool" 
+
+
+{- Turn types into constructors -}
+class ToConstructor a where
+	toConstructor :: a -> MakeTeaMonad (Name Class)
+
+instance ToConstructor (Symbol a) where
+	toConstructor = symbolToConstructor
+
+instance ToConstructor (Some Symbol) where
+	toConstructor = elim symbolToConstructor
+
+instance ToConstructor (Term NonMarker) where
+	toConstructor = termToConstructor
+
+symbolToConstructor :: Symbol a -> MakeTeaMonad (Name Class)
+symbolToConstructor (NonTerminal n) = do return (checkForKeywords (lowerFirstChar (n ++ "_id")) "t")
+symbolToConstructor (Terminal n _) = do return (checkForKeywords (lowerFirstChar (n ++ "_id")) "t") 
+
+termToConstructor :: Term a -> MakeTeaMonad CType 
+termToConstructor (Term _ s m) = do
+	cn <- elim symbolToConstructor s
+	case m of
+		Vector		-> return ("list[" ++ cn ++ "]")
+		Optional		-> return ("maybe[" ++ cn ++ "]")
+		VectorOpt	-> return ("list[maybe[" ++ cn ++ "]]")
+		OptVector	-> return ("maybe[list[" ++ cn ++ "]]")
+		otherwise	-> return cn
+
+termToConstructor m@(Marker _ _) = return "bool" 
+
+
+{- Turn types into DisjBaseNames -}
+class ToDisjBaseName a where
+	toDisjBaseName :: a -> MakeTeaMonad (Name Class)
+
+instance ToDisjBaseName (Symbol a) where
+	toDisjBaseName = symbolToDisjBaseName
+
+instance ToDisjBaseName (Some Symbol) where
+	toDisjBaseName = elim symbolToDisjBaseName
+
+instance ToDisjBaseName (Term NonMarker) where
+	toDisjBaseName = termToDisjBaseName
+
+symbolToDisjBaseName :: Symbol a -> MakeTeaMonad (Name Class)
+symbolToDisjBaseName (NonTerminal n) = do return (lowerFirstChar n)
+symbolToDisjBaseName (Terminal n _) = do return (lowerFirstChar n) 
+
+termToDisjBaseName :: Term a -> MakeTeaMonad CType 
+termToDisjBaseName (Term _ s m) = do
+	cn <- elim symbolToDisjBaseName s
+	case m of
+		Vector		-> return ("list[" ++ cn ++ "]")
+		Optional		-> return ("maybe[" ++ cn ++ "]")
+		VectorOpt	-> return ("list[maybe[" ++ cn ++ "]]")
+		OptVector	-> return ("maybe[list[" ++ cn ++ "]]")
+		otherwise	-> return cn
+
+termToDisjBaseName m@(Marker _ _) = return "bool" 
+
+
+{- Turn types into DisjSubNames -}
+class ToDisjSubName a where
+	toDisjSubName :: a -> MakeTeaMonad (Name Class)
+
+instance ToDisjSubName (Symbol a) where
+	toDisjSubName = symbolToDisjSubName
+
+instance ToDisjSubName (Some Symbol) where
+	toDisjSubName = elim symbolToDisjSubName
+
+instance ToDisjSubName (Term NonMarker) where
+	toDisjSubName = termToDisjSubName
+
+symbolToDisjSubName :: Symbol a -> MakeTeaMonad (Name Class)
+symbolToDisjSubName (NonTerminal n) = do return (n)
+symbolToDisjSubName (Terminal n _) = do return (n) 
+
+termToDisjSubName :: Term a -> MakeTeaMonad CType 
+termToDisjSubName (Term _ s m) = do
+	cn <- elim symbolToDisjSubName s
+	case m of
+		Vector		-> return ("list[" ++ cn ++ "]")
+		Optional		-> return ("maybe[" ++ cn ++ "]")
+		VectorOpt	-> return ("list[maybe[" ++ cn ++ "]]")
+		OptVector	-> return ("maybe[list[" ++ cn ++ "]]")
+		otherwise	-> return cn
+
+termToDisjSubName m@(Marker _ _) = return "bool" 
