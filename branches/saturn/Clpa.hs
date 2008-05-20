@@ -119,6 +119,11 @@ filterConjTypes name (Conj head body) = do
 	tn <- toTypeName head
 	return (name == tn)
 
+removeT_ :: String -> String
+removeT_ = drop 2
+
+lowerFirstChar :: String -> String
+lowerFirstChar (n:ns) = ((toLower n):ns)
 
 createDisjTypes :: Rule Disj -> MakeTeaMonad String
 createDisjTypes (Disj head body) = do
@@ -126,7 +131,7 @@ createDisjTypes (Disj head body) = do
 	inst <- concreteInstances head -- TODO should this be allInstances?
 	body <- forM inst $ \term -> do
 		tn <- toTypeName term
-		return $ (typeName ++ "_" ++ tn ++ "_id { " ++ tn ++ " } ")
+		return $ (((lowerFirstChar . removeT_) typeName) ++ "_" ++ (removeT_ tn) ++ "_id { " ++ tn ++ " } ")
 	return $ "type " ++ typeName ++ " ::= \n\t\t  " ++ (flattenPipe (map (++ "\n\t\t" ) (filter (/= "") body))) ++ "."
 
 
@@ -145,12 +150,11 @@ instance ToPredName (Term NonMarker) where
 	toPredName = termToPredName
 
 symbolToPredName :: Symbol a -> MakeTeaMonad (Name Class) -- TODO Class?
-symbolToPredName (NonTerminal n) = do
-	prefix <- getPrefix
-	return (prefix ++ "_" ++ n) 
-symbolToPredName (Terminal n _) = do 
-	prefix <- getPrefix
-	return (prefix ++ "_" ++ n) 
+symbolToPredName (NonTerminal n) = do return (lowerFirstChar n) 
+symbolToPredName (Terminal n _) = do return (lowerFirstChar n) 
+
+
+
 
 termToPredName :: Term NonMarker -> MakeTeaMonad CType 
 termToPredName (Term _ s m) = do
@@ -205,12 +209,8 @@ instance ToTypeName (Term NonMarker) where
 	toTypeName = termToTypeName
 
 symbolToTypeName :: Symbol a -> MakeTeaMonad (Name Class)
-symbolToTypeName (NonTerminal n) = do
-	prefix <- getPrefix
-	return ("t_" ++ prefix ++ "_" ++ n)
-symbolToTypeName (Terminal n _) = do
-	prefix <- getPrefix
-	return ("t_" ++ prefix ++ "_" ++ n) 
+symbolToTypeName (NonTerminal n) = do return ("t_" ++ n)
+symbolToTypeName (Terminal n _) = do return ("t_" ++ n) 
 
 termToTypeName :: Term a -> MakeTeaMonad CType 
 termToTypeName (Term _ s m) = do
