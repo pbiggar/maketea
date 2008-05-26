@@ -30,11 +30,9 @@ clpaDefinition = do
 	tokenPreds <- withTokens $ mapM createTokenPreds
 	prefix <- getPrefix
 	return $ (unlines 
-		[ "session " ++ prefix ++ " (PROG:string)."
+		[ "import \"src/analyse/base.clp\"."
 		, ""
-		, "% Type not supplied by Saturn"
-		, "type null."
-		, "type id = int."
+		, "session " ++ prefix ++ " (PROG:string)."
 		, ""
 		, "% Forward declarations for conjunctive types"
 		, unlines conjForwardDecls
