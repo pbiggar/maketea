@@ -32,7 +32,7 @@ clpaDefinition = do
 	return $ (unlines 
 		[ "import \"src/analyse/base.clp\"."
 		, ""
-		, "session " ++ prefix ++ " (PROG:string)."
+		, "session " ++ prefix ++ " ()."
 		, ""
 		, "% Forward declarations for conjunctive types"
 		, unlines conjForwardDecls
