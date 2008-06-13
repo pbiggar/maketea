@@ -95,6 +95,20 @@ getPrefix = do
 				(Just name) -> map toLower name
 	return ns'
 
+lowerFirstChar :: String -> String
+lowerFirstChar (n:ns) = ((toLower n):ns)
+
+checkForKeywords :: String -> String -> String
+checkForKeywords n prefix =
+	let keywords = ["type", "predicate", "session", "analyze", "using", "import"]
+	in 
+		if (elem n keywords) then checkForKeywords (prefix ++ "_" ++ n) prefix
+		else n
+
+
+{-
+ - IR Predicates
+ -}
 createConjPreds :: Rule Conj -> MakeTeaMonad String
 createConjPreds (Conj head body) = do
 	predName <- toPredName head
@@ -102,18 +116,30 @@ createConjPreds (Conj head body) = do
 	args <- forM body $ \term -> do
 		argType <- elim termToTypeName term
 		let argName = toVarName term
-		return (argName ++ ":" ++ argType) 
-	return $ if (length args == 0) 
-				then "predicate " ++ predName ++ " (ID:" ++ typeName ++ ")."
-				else "predicate " ++ predName ++ " (ID:" ++ typeName ++ ", " ++ flattenComma (args) ++ ")."
+		return (argName ++ ":" ++ argType)
+	let allArgs = ("ID:" ++ typeName):args
+	return $ "predicate " ++ predName ++ " (" ++ flattenComma (allArgs) ++ ")."
 
 createTokenPreds :: Symbol Terminal -> MakeTeaMonad String
 createTokenPreds (Terminal name ctype) = do
 	typeName <- toTypeName (Terminal name ctype)
 	predName <- toPredName (Terminal name ctype)
-	return $ "predicate " ++ predName ++ " (ID:" ++ typeName ++ ", VALUE:" ++ (toClpaPrimType ctype) ++ ")."
+	let primType = toClpaPrimType ctype
+	return $ "predicate " ++ predName ++ " (ID:" ++ typeName ++ ", VALUE:" ++ primType ++ ")."
+
+-- TODO make this more generic
+toClpaPrimType :: Maybe String -> String
+toClpaPrimType (Just "String*") = "string"
+toClpaPrimType (Just "long") = "int"
+toClpaPrimType (Just "bool") = "bool"
+toClpaPrimType (Just "double") = "float"
+toClpaPrimType (Just "") = "null"
+toClpaPrimType Nothing = "string"
 
 
+{-
+ - Forward declarations
+ -}
 createConjForwardDecls :: Rule Conj -> MakeTeaMonad String
 createConjForwardDecls (Conj head body) = do
 	typeName <- toTypeName head
@@ -130,37 +156,14 @@ createTokenDecls (Terminal name ctype) = do
 	typeConstructor <- toConstructor (Terminal name ctype)
 	return $ "type " ++ typeName ++ " ::= " ++ typeConstructor ++ " { id }."
 
-toClpaPrimType :: Maybe String -> String
-toClpaPrimType (Just "String*") = "string"
-toClpaPrimType (Just "long") = "int"
-toClpaPrimType (Just "bool") = "bool"
-toClpaPrimType (Just "double") = "float"
-toClpaPrimType (Just "") = "null"
-toClpaPrimType Nothing = "string"
-
+{-
+ - Type declarations
+ -}
 createConjTypes :: Rule Conj -> MakeTeaMonad String
 createConjTypes (Conj head body) = do
 	constructorName <- toConstructor head
 	typeName <- toTypeName head
-	args <- forM body $ \term -> do
-		argType <- elim (termToTypeName) term
-		return argType
 	return $ "type " ++ typeName ++ " ::= " ++ constructorName ++ " { id }."
-
-filterConjTypes :: Name Class -> Rule Conj -> MakeTeaMonad Bool
-filterConjTypes name (Conj head body) = do
-	tn <- toTypeName head
-	return (name == tn)
-
-lowerFirstChar :: String -> String
-lowerFirstChar (n:ns) = ((toLower n):ns)
-
-checkForKeywords :: String -> String -> String
-checkForKeywords n prefix =
-	let keywords = ["type", "predicate", "session", "analyze", "using", "import"]
-	in 
-		if (elem n keywords) then checkForKeywords (prefix ++ "_" ++ n) prefix
-		else n
 
 createDisjTypes :: Rule Disj -> MakeTeaMonad String
 createDisjTypes (Disj head body) = do
@@ -171,7 +174,11 @@ createDisjTypes (Disj head body) = do
 		tn <- toTypeName term
 		subName <- toDisjSubName term
 		return $ (baseName ++ "_" ++ subName ++ " { " ++ tn ++ " } ")
-	return $ "type " ++ typeName ++ " ::= \n\t\t  " ++ (flattenPipe (map (++ "\n\t\t" ) (filter (/= "") body))) ++ "."
+	let nonBlankBody = filter (/= "") body
+	return $
+		"type " ++ typeName ++ " ::= \n\t\t  " 
+		++ (flattenWith "\n\t\t| " nonBlankBody)
+		++ "\n\t\t."
 
 
 
@@ -199,6 +206,7 @@ createDisjToNodes (Disj head body) = do
 			"to_node (ANY, NODE) :- ",
 			"ANY = any{" ++ baseName ++ "_" ++ subName ++ "{INNER}},",
 			"to_node (any{INNER}, NODE)."]
+-- Is there any difference with the previous syntax?
 --			"ANY = any{" ++ baseName ++ "_" ++ subName ++ "{" ++ constructorName ++ "{ID}},",
 --			"NODE = node_" ++ subName ++ "{" ++ constructorName ++ "{ID}}." ]
 	return $ flattenWith "\n\n" body
@@ -214,7 +222,9 @@ createTokenToNodes t = do
 
 
 
-
+{-
+ - Type names
+ -}
 createConjGetTypes :: Rule Conj -> MakeTeaMonad String
 createConjGetTypes (Conj head body) = do
 	prefix <- getPrefix
@@ -222,8 +232,9 @@ createConjGetTypes (Conj head body) = do
 	typeName <- toDisjSubName head
 	args <- forM body $ \term -> do
 		return $ "_"
+	let allArgs = "ID":args
 	return $ 
-		prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma ("ID":args)) ++ "), "
+		prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma allArgs) ++ "), "
 		++ "+get_type (node_" ++ typeName ++ "{ID}, \"" ++ typeName ++ "\")."
 
 createTokenGetTypes :: Symbol Terminal -> MakeTeaMonad String
@@ -248,17 +259,18 @@ createConjVisitors (Conj head body) = do
 	args <- forM body $ \term -> do
 		let paramName = toGenericsParamName term
 		return $ paramName
+	let allArgs = "ID":args
 	argGenerics <- forM body $ \term -> do
 		generics <- toGenericsUse term
 		return $ generics
-	argNames <- forM body $ \term -> do
+	genArgs <- forM body $ \term -> do
 		names <- toGenericsName term
 		return $ names
 	return $ flattenWith ",\n\t" ([
-		prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma ("ID":args)) ++ ")"
+		prefix ++ "()->" ++ predName ++ "(" ++ flattenComma allArgs ++ ")"
 		, "to_node (any{ID}, NODE)"
 		] ++ argGenerics ++ [
-		"GENERIC = gnode{NODE, [" ++ (flattenComma argNames) ++ "]}"
+		"GENERIC = gnode{NODE, [" ++ flattenComma genArgs ++ "]}"
 		, "+to_generic (NODE, GENERIC).\n"])
 
 createTokenVisitors :: Symbol Terminal -> MakeTeaMonad String
@@ -266,15 +278,15 @@ createTokenVisitors (Terminal name ctype) = do
 	let t = (Terminal name ctype)
 	prefix <- getPrefix
 	predName <- toPredName t
-	generic <- toGenericsUse t
-	typeName <- toDisjSubName t
-	let argName = toGenericsParamName t
-	genName <- toGenericsName t
+	genericUse <- toGenericsUse t
+	typeNameUse <- toDisjSubName t
+	let arg = toGenericsParamName t
+	genArg <- toGenericsName t
 	return $ flattenWith ",\n\t" [
-		  prefix ++ "()->" ++ predName ++ "(ID, " ++ argName ++ ")"
+		  prefix ++ "()->" ++ predName ++ "(ID, " ++ arg ++ ")"
 		, "to_node (any{ID}, NODE)"
-		, generic
-		, "GENERIC = gnode{NODE, [" ++ genName ++ "]}"
+		, genericUse
+		, "GENERIC = gnode{NODE, [" ++ genArg ++ "]}"
 		, "+to_generic (NODE, GENERIC).\n"]
 
 
