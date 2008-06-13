@@ -538,10 +538,11 @@ termToGenericsUse (Marker l m) = do
 symbolToGenericsUse :: Symbol a -> MakeTeaMonad (Name Class)
 symbolToGenericsUse (NonTerminal n) = do
 	return (map toUpper n)
-symbolToGenericsUse (Terminal n ctype) =
-	return ("GEN_" ++ name ++ " = g" ++ gentype ++ " {" ++ name ++ "}")
-	where name = map toUpper n;
-			gentype = toClpaPrimType ctype
+symbolToGenericsUse (Terminal n ctype) = do
+	genName <- toGenericsName (Terminal n ctype)
+	let name = toGenericsParamName (Terminal n ctype)
+	let gentype = toClpaPrimType ctype
+	return (genName ++ " = g" ++ gentype ++ " {" ++ name ++ "}")
 
 
 
