@@ -4,9 +4,6 @@
  - License: GNU General Public License 2.0
  -}
 
--- TODO:
---		anything nullable (is_option?) should be Maybe
-
 module Clpa where
 
 import Data.Maybe
@@ -303,19 +300,13 @@ symbolToPredName (NonTerminal n) = do
 symbolToPredName (Terminal n _) = do
 	return (checkForKeywords (lowerFirstChar (n)) "p")
 
-
-
-
 termToPredName :: Term NonMarker -> MakeTeaMonad CType 
 termToPredName (Term _ s m) = do
 	cn <- elim symbolToPredName s
-	if isVector m 
-		then do
-			error ("unreachable")
-		else return cn
+	return cn
 
 
-{- Turn types into variable names -}
+{- Turn types into Predicate argument names -}
 class ToVarName a where
 	toVarName :: a -> MakeTeaMonad (Name Class)
 
@@ -393,7 +384,7 @@ termToTypeName (Term _ s m) = do
 termToTypeName m@(Marker _ _) = return "bool" 
 
 
-{- Turn types into constructors -}
+{- Turn types into constructors: assign_var_id -}
 class ToConstructor a where
 	toConstructor :: a -> MakeTeaMonad (Name Class)
 
@@ -413,17 +404,11 @@ symbolToConstructor (Terminal n _) = do return (checkForKeywords (lowerFirstChar
 termToConstructor :: Term a -> MakeTeaMonad CType 
 termToConstructor (Term _ s m) = do
 	cn <- elim symbolToConstructor s
-	case m of
-		Vector		-> return ("list[" ++ cn ++ "]")
-		Optional		-> return ("maybe[" ++ cn ++ "]")
-		VectorOpt	-> return ("list[maybe[" ++ cn ++ "]]")
-		OptVector	-> return ("maybe[list[" ++ cn ++ "]]")
-		otherwise	-> return cn
-
-termToConstructor m@(Marker _ _) = return "bool" 
+	return cn
 
 
-{- Turn types into DisjBaseNames -}
+
+{- Turn types into DisjBaseNames: the first part of node_Target -}
 class ToDisjBaseName a where
 	toDisjBaseName :: a -> MakeTeaMonad (Name Class)
 
@@ -443,17 +428,10 @@ symbolToDisjBaseName (Terminal n _) = do return (lowerFirstChar n)
 termToDisjBaseName :: Term a -> MakeTeaMonad CType 
 termToDisjBaseName (Term _ s m) = do
 	cn <- elim symbolToDisjBaseName s
-	case m of
-		Vector		-> return ("list[" ++ cn ++ "]")
-		Optional		-> return ("maybe[" ++ cn ++ "]")
-		VectorOpt	-> return ("list[maybe[" ++ cn ++ "]]")
-		OptVector	-> return ("maybe[list[" ++ cn ++ "]]")
-		otherwise	-> return cn
-
-termToDisjBaseName m@(Marker _ _) = return "bool" 
+	return cn
 
 
-{- Turn types into DisjSubNames -}
+{- Turn types into DisjSubNames: the second part of node_Target. -}
 class ToDisjSubName a where
 	toDisjSubName :: a -> MakeTeaMonad (Name Class)
 
@@ -473,14 +451,7 @@ symbolToDisjSubName (Terminal n _) = do return (n)
 termToDisjSubName :: Term a -> MakeTeaMonad CType 
 termToDisjSubName (Term _ s m) = do
 	cn <- elim symbolToDisjSubName s
-	case m of
-		Vector		-> return ("list[" ++ cn ++ "]")
-		Optional		-> return ("maybe[" ++ cn ++ "]")
-		VectorOpt	-> return ("list[maybe[" ++ cn ++ "]]")
-		OptVector	-> return ("maybe[list[" ++ cn ++ "]]")
-		otherwise	-> return cn
-
-termToDisjSubName m@(Marker _ _) = return "bool"
+	return cn
 
 
 {- Turn types into a use of the to_generic rules -}
