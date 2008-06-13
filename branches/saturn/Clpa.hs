@@ -199,9 +199,8 @@ createDisjToNodes :: Rule Disj -> MakeTeaMonad String
 createDisjToNodes (Disj head body) = do
 	baseName <- toDisjBaseName head
 	inst <- concreteInstances head -- TODO should this be allInstances?
-	body <- forM inst $ \term -> do
+	body <- forM inst $ \term -> do -- TODO if it doesnt equal Node
 		subName <- toDisjSubName term
-		-- TODO if it doesnt equal Node
 		return $ flattenWith "\n\t" [
 			"to_node (ANY, NODE) :- ",
 			"ANY = any{" ++ baseName ++ "_" ++ subName ++ "{INNER}},",
@@ -230,8 +229,7 @@ createConjGetTypes (Conj head body) = do
 	prefix <- getPrefix
 	predName <- toPredName head
 	typeName <- toDisjSubName head
-	args <- forM body $ \term -> do
-		return $ "_"
+	let args = ["_" | _ <- body]
 	let allArgs = "ID":args
 	return $ 
 		prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma allArgs) ++ "), "
@@ -256,16 +254,10 @@ createConjVisitors (Conj head body) = do
 	prefix <- getPrefix
 	predName <- toPredName head
 	typeName <- toDisjSubName head
-	args <- forM body $ \term -> do
-		paramName <- toGenericsParamName term
-		return $ paramName
-	allArgs <- do return $ ["ID"] ++ args
-	argGenerics <- forM body $ \term -> do
-		generics <- toGenericsUse term
-		return $ generics
-	genArgs <- forM body $ \term -> do
-		names <- toGenericsName term
-		return $ names
+	argGenerics <- forM body $ \term -> do toGenericsUse term
+	genArgs <- forM body $ \term -> do toGenericsName term
+	args <- forM body $ \term -> do toGenericsParamName term
+	let allArgs = "ID":args
 	return $ flattenWith ",\n\t" ([
 		prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma allArgs) ++ ")"
 		, "to_node (any{ID}, NODE)"
