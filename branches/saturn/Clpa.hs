@@ -115,7 +115,7 @@ createConjPreds (Conj head body) = do
 	typeName <- toTypeName head
 	args <- forM body $ \term -> do
 		argType <- elim termToTypeName term
-		let argName = toVarName term
+		argName <- toVarName term
 		return (argName ++ ":" ++ argType)
 	let allArgs = ("ID:" ++ typeName):args
 	return $ "predicate " ++ predName ++ " (" ++ flattenComma (allArgs) ++ ")."
@@ -257,9 +257,9 @@ createConjVisitors (Conj head body) = do
 	predName <- toPredName head
 	typeName <- toDisjSubName head
 	args <- forM body $ \term -> do
-		let paramName = toGenericsParamName term
+		paramName <- toGenericsParamName term
 		return $ paramName
-	let allArgs = "ID":args
+	allArgs <- do return $ ["ID"] ++ args
 	argGenerics <- forM body $ \term -> do
 		generics <- toGenericsUse term
 		return $ generics
@@ -267,7 +267,7 @@ createConjVisitors (Conj head body) = do
 		names <- toGenericsName term
 		return $ names
 	return $ flattenWith ",\n\t" ([
-		prefix ++ "()->" ++ predName ++ "(" ++ flattenComma allArgs ++ ")"
+		prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma allArgs) ++ ")"
 		, "to_node (any{ID}, NODE)"
 		] ++ argGenerics ++ [
 		"GENERIC = gnode{NODE, [" ++ flattenComma genArgs ++ "]}"
@@ -280,7 +280,7 @@ createTokenVisitors (Terminal name ctype) = do
 	predName <- toPredName t
 	genericUse <- toGenericsUse t
 	typeNameUse <- toDisjSubName t
-	let arg = toGenericsParamName t
+	arg <- toGenericsParamName t
 	genArg <- toGenericsName t
 	return $ flattenWith ",\n\t" [
 		  prefix ++ "()->" ++ predName ++ "(ID, " ++ arg ++ ")"
@@ -325,7 +325,7 @@ termToPredName (Term _ s m) = do
 
 {- Turn types into variable names -}
 class ToVarName a where
-	toVarName :: a -> Name Variable 
+	toVarName :: a -> MakeTeaMonad (Name Class)
 
 instance ToVarName (Term a) where
 	toVarName = termToVarName
@@ -339,17 +339,21 @@ instance ToVarName (Symbol a) where
 instance ToVarName (Some Symbol) where
 	toVarName = elim symbolToVarName
 
-termToVarName :: Term a -> Name Variable 
+termToVarName :: Term a -> MakeTeaMonad (Name Class)
 termToVarName (Term Nothing s m) 
-	| isVector m = toVarName s ++ "S" 
-	| otherwise = toVarName s
-termToVarName (Term (Just n) _ _) = map toUpper n
-termToVarName (Marker Nothing m) = "IS_" ++ (map toUpper m)
-termToVarName (Marker (Just n) _) = map toUpper n
+	| isVector m = do 
+		varName <- toVarName s
+		return $ (varName ++ "S")
+	| otherwise = do 
+		varName <- toVarName s
+		return $ varName
+termToVarName (Term (Just n) _ _) = do return $ map toUpper n
+termToVarName (Marker Nothing m) = do return $ "IS_" ++ (map toUpper m)
+termToVarName (Marker (Just n) _) = do return $ map toUpper n
 
-symbolToVarName :: Symbol a -> Name Variable 
-symbolToVarName (NonTerminal n) = map toUpper n
-symbolToVarName (Terminal n _) = map toUpper n
+symbolToVarName :: Symbol a -> MakeTeaMonad (Name Class)
+symbolToVarName (NonTerminal n) = do return $ map toUpper n
+symbolToVarName (Terminal n _) = do return $ map toUpper n
 
 
 
@@ -492,7 +496,7 @@ instance ToGenericsUse (Some Symbol) where
 termToGenericsUse :: Term a -> MakeTeaMonad (Name Class)
 termToGenericsUse (Term l s m) = do
 	genName <- toGenericsName (Term l s m)
-	let paramName = toGenericsParamName (Term l s m)
+	paramName <- toGenericsParamName (Term l s m)
 	case m of
 		Vector		-> do
 			predName <- elim symbolToPredName s
@@ -500,7 +504,7 @@ termToGenericsUse (Term l s m) = do
 				++ paramName ++ ", " ++ genName ++ ")")
 
 		Optional		-> do
-			let optName = toGenericsParamName (Term l s Single)
+			optName <- toGenericsParamName (Term l s Single)
 			yesRule <- termToGenericsUse (Term l s Single)
 			genOptName <- termToGenericsName (Term l s Single)
 			return (
@@ -513,7 +517,7 @@ termToGenericsUse (Term l s m) = do
 
 
 		OptVector -> do
-			let optName = toGenericsParamName (Term l s Vector)
+			optName <- toGenericsParamName (Term l s Vector)
 			yesRule <- termToGenericsUse (Term l s Vector)
 			genOptName <- termToGenericsName (Term l s Vector)
 		
@@ -531,7 +535,7 @@ termToGenericsUse (Term l s m) = do
 	
 
 termToGenericsUse (Marker l m) = do
-	let name = toGenericsParamName (Marker l m)
+	name <- toGenericsParamName (Marker l m)
 	genName <- toGenericsName (Marker l m)
 	return (genName ++ " = gmarker {" ++ name ++ "}")
 
@@ -540,7 +544,7 @@ symbolToGenericsUse (NonTerminal n) = do
 	return (map toUpper n)
 symbolToGenericsUse (Terminal n ctype) = do
 	genName <- toGenericsName (Terminal n ctype)
-	let name = toGenericsParamName (Terminal n ctype)
+	name <- toGenericsParamName (Terminal n ctype)
 	let gentype = toClpaPrimType ctype
 	return (genName ++ " = g" ++ gentype ++ " {" ++ name ++ "}")
 
@@ -565,16 +569,18 @@ instance ToGenericsName (Some Symbol) where
 
 termToGenericsName :: Term a -> MakeTeaMonad (Name Class)
 termToGenericsName t = do
-	return ("GEN_" ++ (toGenericsParamName t))
+	argName <- toGenericsParamName t
+	return ("GEN_" ++ argName)
 
 symbolToGenericsName :: Symbol a -> MakeTeaMonad (Name Class)
 symbolToGenericsName s = do
-	return ("GEN_" ++ (toGenericsParamName s))
+	argName <- toGenericsParamName s
+	return ("GEN_" ++ argName)
 
 
 {- Parameter names for generic functions -}
 class ToGenericsParamName a where
-	toGenericsParamName :: a -> Name Variable 
+	toGenericsParamName :: a -> MakeTeaMonad (Name Class)
 
 instance ToGenericsParamName (Term a) where
 	toGenericsParamName = termToGenericsParamName
@@ -588,29 +594,33 @@ instance ToGenericsParamName (Symbol a) where
 instance ToGenericsParamName (Some Symbol) where
 	toGenericsParamName = elim symbolToGenericsParamName
 
-termToGenericsParamName :: Term a -> Name Variable 
-termToGenericsParamName (Term Nothing s m) =
+termToGenericsParamName :: Term a -> MakeTeaMonad (Name Class)
+termToGenericsParamName (Term Nothing s m) = do
+	name <- elim symbolToGenericsParamName s
 	case m of
-		Vector		-> name ++ "S"
-		Optional		-> "OPT_" ++ name
-		OptVector	-> "OPT_" ++ name ++ "S"
-		VectorOpt	-> name ++ "S"
-		otherwise	-> name
-	where name = elim symbolToGenericsParamName s
+		Vector		-> return $ name ++ "S"
+		Optional		-> return $ "OPT_" ++ name
+		OptVector	-> return $ "OPT_" ++ name ++ "S"
+		VectorOpt	-> return $ name ++ "S"
+		otherwise	-> return $ name
 
-termToGenericsParamName (Term (Just l) s m) =
+termToGenericsParamName (Term (Just l) s m) = do
 	case m of
-		Vector		-> name ++ "S"
-		Optional		-> "OPT_" ++ name
-		OptVector	-> "OPT_" ++ name ++ "S"
-		VectorOpt	-> name ++ "S"
-		otherwise	-> name
+		Vector		-> return $ name ++ "S"
+		Optional		-> return $ "OPT_" ++ name
+		OptVector	-> return $ "OPT_" ++ name ++ "S"
+		VectorOpt	-> return $ name ++ "S"
+		otherwise	-> return $ name
 	where name = map toUpper l
 
-termToGenericsParamName (Marker Nothing m) = "IS_" ++ (map toUpper m)
-termToGenericsParamName (Marker (Just n) _) = map toUpper n
+termToGenericsParamName (Marker Nothing m) = do
+	return $ "IS_" ++ (map toUpper m)
+termToGenericsParamName (Marker (Just n) _) = do
+	return $ map toUpper n
 
-symbolToGenericsParamName :: Symbol a -> Name Variable 
-symbolToGenericsParamName (NonTerminal n) = map toUpper n
-symbolToGenericsParamName (Terminal n _) = map toUpper n
+symbolToGenericsParamName :: Symbol a -> MakeTeaMonad (Name Class)
+symbolToGenericsParamName (NonTerminal n) = do
+	return $ map toUpper n
+symbolToGenericsParamName (Terminal n _) = do
+	return $ map toUpper n
 
