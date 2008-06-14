@@ -229,8 +229,9 @@ createConjGetTypes (Conj head body) = do
 	let args = ["_" | _ <- body]
 	let allArgs = "ID":args
 	return $ 
-		prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma allArgs) ++ "), "
-		++ "+get_type (node_" ++ typeName ++ "{ID}, \"" ++ typeName ++ "\")."
+		   "get_type (node_" ++ typeName ++ "{ID}, \"" ++ typeName ++ "\") :- "
+		++ prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma allArgs) ++ ")."
+
 
 createTokenGetTypes :: Symbol Terminal -> MakeTeaMonad String
 createTokenGetTypes t = do
@@ -238,8 +239,8 @@ createTokenGetTypes t = do
 	predName <- toPredName t
 	typeName <- toDisjSubName t
 	return $ 
-		prefix ++ "()->" ++ predName ++ "(ID, _), "
-		++ "+get_type (node_" ++ typeName ++ "{ID}, \"" ++ typeName ++ "\")."
+		   "get_type (node_" ++ typeName ++ "{ID}, \"" ++ typeName ++ "\") :- "
+		++ prefix ++ "()->" ++ predName ++ "(ID, _)."
 
 
 
@@ -255,12 +256,11 @@ createConjVisitors (Conj head body) = do
 	genArgs <- forM body $ \term -> do toGenericsName term
 	args <- forM body $ \term -> do toVarName term
 	let allArgs = "ID":args
-	return $ flattenWith ",\n\t" ([
-		prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma allArgs) ++ ")"
+	return $ "to_generic (NODE, GENERIC) :-\n\t" ++ (flattenWith ",\n\t" ([
+		  prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma allArgs) ++ ")"
 		, "to_node (any{ID}, NODE)"
 		] ++ argGenerics ++ [
-		"GENERIC = gnode{NODE, [" ++ flattenComma genArgs ++ "]}"
-		, "+to_generic (NODE, GENERIC).\n"])
+		"GENERIC = gnode{NODE, [" ++ flattenComma genArgs ++ "]}.\n"]))
 
 createTokenVisitors :: Symbol Terminal -> MakeTeaMonad String
 createTokenVisitors (Terminal name ctype) = do
@@ -271,12 +271,11 @@ createTokenVisitors (Terminal name ctype) = do
 	typeNameUse <- toDisjSubName t
 	arg <- toVarName t
 	genArg <- toGenericsName t
-	return $ flattenWith ",\n\t" [
+	return $ "to_generic (NODE, GENERIC) :-\n\t" ++ flattenWith ",\n\t" [
 		  prefix ++ "()->" ++ predName ++ "(ID, " ++ arg ++ ")"
 		, "to_node (any{ID}, NODE)"
 		, genericUse
-		, "GENERIC = gnode{NODE, [" ++ genArg ++ "]}"
-		, "+to_generic (NODE, GENERIC).\n"]
+		, "GENERIC = gnode{NODE, [" ++ genArg ++ "]}.\n"]
 
 
 
