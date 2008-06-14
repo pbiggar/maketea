@@ -198,13 +198,11 @@ createDisjToNodes (Disj head body) = do
 	inst <- concreteInstances head -- TODO should this be allInstances?
 	body <- forM inst $ \term -> do -- TODO if it doesnt equal Node
 		subName <- toDisjSubName term
+		constructor <- toConstructor term
 		return $ flattenWith "\n\t" [
 			"to_node (ANY, NODE) :- ",
-			"ANY = any{" ++ baseName ++ "_" ++ subName ++ "{INNER}},",
-			"to_node (any{INNER}, NODE)."]
--- Is there any difference with the previous syntax?
---			"ANY = any{" ++ baseName ++ "_" ++ subName ++ "{" ++ constructorName ++ "{ID}},",
---			"NODE = node_" ++ subName ++ "{" ++ constructorName ++ "{ID}}." ]
+			"ANY = any{" ++ baseName ++ "_" ++ subName ++ "{" ++ constructor ++ "{ID}}},",
+			"NODE = node_" ++ subName ++ "{" ++ constructor ++ "{ID}}." ]
 	return $ flattenWith "\n\n" body
 
 createTokenToNodes :: Symbol Terminal -> MakeTeaMonad String
