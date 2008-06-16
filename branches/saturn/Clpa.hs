@@ -29,8 +29,6 @@ clpaDefinition = do
 	conjToNodes <- withConj $ mapM createConjToNodes
 	disjToNodes <- withDisj $ mapM createDisjToNodes
 	tokensToNodes <- withTokens $ mapM createTokenToNodes
-	getConjTypes <- withConj $ mapM createConjGetTypes
-	getTokenTypes <- withTokens $ mapM createTokenGetTypes
 	conjVisitors <- withConj $ mapM createConjVisitors
 	tokenVisitors <- withTokens $ mapM createTokenVisitors
 	prefix <- getPrefix
@@ -39,47 +37,41 @@ clpaDefinition = do
 		, ""
 		, "session " ++ prefix ++ " ()."
 		, ""
-		, "% Forward declarations for conjunctive types"
+		, "% Forward declarations"
 		, unlines conjForwardDecls
 		, ""
-		, "% Forward declarations for disjunctive types"
 		, unlines disjForwardDecls
+		, ""
 		, ""
 		, "% Token declarations"
 		, unlines tokenDecls
 		, ""
-		, "% Conjunctive types"
+		, ""
+		, "% Types"
 		, unlines conjTypes
 		, ""
-		, "% Disjunctive types"
  	 	, unlines (reverse disjTypes)
 		, ""
-		, "% Conjunctive Predicates"
+		, ""
+		, "% Predicates"
 		, unlines conjPreds
-		, "% Token Predicates"
+		, ""
 		, unlines tokenPreds
 		, ""
 		, ""
 		, "% Generics"
 		, ""
-		, "% Conjunctive Type Casts"
+		, "% Type Casts"
 		, unlines conjToNodes
 		, ""
-		, "% Disjunctive Type Casts"
 		, unlines disjToNodes
 		, ""
-		, "% Tokens Casts"
 		, unlines tokensToNodes
 		, ""
 		, ""
-		, "% Type names"
-		, unlines getConjTypes
-		, unlines getTokenTypes
-		, ""
-		, "% Conjunctive data visitors"
+		, "% Data visitors"
 		, unlines conjVisitors
 		, ""
-		, "% Token data visitors"
 		, unlines tokenVisitors
 		, ""
 		])
@@ -215,33 +207,6 @@ createTokenToNodes t = do
 		"NODE = node_" ++ subName ++ "{" ++ constructor ++ "{ID}}.\n"]
 
 
-
-{-
- - Type names
- -}
-createConjGetTypes :: Rule Conj -> MakeTeaMonad String
-createConjGetTypes (Conj head body) = do
-	prefix <- getPrefix
-	predName <- toPredName head
-	typeName <- toDisjSubName head
-	let args = ["_" | _ <- body]
-	let allArgs = "ID":args
-	return $ 
-		   "get_type (node_" ++ typeName ++ "{ID}, \"" ++ typeName ++ "\") :- "
-		++ prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma allArgs) ++ ")."
-
-
-createTokenGetTypes :: Symbol Terminal -> MakeTeaMonad String
-createTokenGetTypes t = do
-	prefix <- getPrefix
-	predName <- toPredName t
-	typeName <- toDisjSubName t
-	return $ 
-		   "get_type (node_" ++ typeName ++ "{ID}, \"" ++ typeName ++ "\") :- "
-		++ prefix ++ "()->" ++ predName ++ "(ID, _)."
-
-
-
 {-
  - Visitors
  -}
@@ -253,12 +218,13 @@ createConjVisitors (Conj head body) = do
 	argGenerics <- forM body $ \term -> do toGenericsUse term
 	genArgs <- forM body $ \term -> do toGenericsName term
 	args <- forM body $ \term -> do toVarName term
+	typeName <- toDisjSubName head
 	let allArgs = "ID":args
 	return $ "to_generic (NODE, GENERIC) :-\n\t" ++ (flattenWith ",\n\t" ([
 		  prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma allArgs) ++ ")"
 		, "to_node (any{ID}, NODE)"
 		] ++ argGenerics ++ [
-		"GENERIC = gnode{NODE, [" ++ flattenComma genArgs ++ "]}.\n"]))
+		"GENERIC = gnode{NODE, \"" ++ typeName ++ "\", [" ++ flattenComma genArgs ++ "]}.\n"]))
 
 createTokenVisitors :: Symbol Terminal -> MakeTeaMonad String
 createTokenVisitors (Terminal name ctype) = do
@@ -266,14 +232,14 @@ createTokenVisitors (Terminal name ctype) = do
 	prefix <- getPrefix
 	predName <- toPredName t
 	genericUse <- toGenericsUse t
-	typeNameUse <- toDisjSubName t
 	arg <- toVarName t
 	genArg <- toGenericsName t
+	typeName <- toDisjSubName t 
 	return $ "to_generic (NODE, GENERIC) :-\n\t" ++ flattenWith ",\n\t" [
 		  prefix ++ "()->" ++ predName ++ "(ID, " ++ arg ++ ")"
 		, "to_node (any{ID}, NODE)"
 		, genericUse
-		, "GENERIC = gnode{NODE, [" ++ genArg ++ "]}.\n"]
+		, "GENERIC = gnode{NODE, \"" ++ typeName ++ "\", [" ++ genArg ++ "]}.\n"]
 
 
 
@@ -399,7 +365,7 @@ symbolToConstructor (NonTerminal n) = do return (checkForKeywords (lowerFirstCha
 symbolToConstructor (Terminal n _) = do return (checkForKeywords (lowerFirstChar (n ++ "_id")) "t") 
 
 termToConstructor :: Term a -> MakeTeaMonad CType 
-termToConstructor (Term _ s m) = do
+termToConstructor (Term _ s _) = do
 	cn <- elim symbolToConstructor s
 	return cn
 
@@ -423,7 +389,7 @@ symbolToDisjBaseName (NonTerminal n) = do return (lowerFirstChar n)
 symbolToDisjBaseName (Terminal n _) = do return (lowerFirstChar n) 
 
 termToDisjBaseName :: Term a -> MakeTeaMonad CType 
-termToDisjBaseName (Term _ s m) = do
+termToDisjBaseName (Term _ s _) = do
 	cn <- elim symbolToDisjBaseName s
 	return cn
 
@@ -446,7 +412,7 @@ symbolToDisjSubName (NonTerminal n) = do return (n)
 symbolToDisjSubName (Terminal n _) = do return (n) 
 
 termToDisjSubName :: Term a -> MakeTeaMonad CType 
-termToDisjSubName (Term _ s m) = do
+termToDisjSubName (Term _ s _) = do
 	cn <- elim symbolToDisjSubName s
 	return cn
 
@@ -468,58 +434,72 @@ instance ToGenericsUse (Some Symbol) where
 	toGenericsUse = elim symbolToGenericsUse
 
 termToGenericsUse :: Term a -> MakeTeaMonad (Name Class)
-termToGenericsUse (Term l s m) = do
-	gen <- toGenericsName (Term l s m)
-	arg <- toVarName (Term l s m)
+termToGenericsUse term@(Term l s m) = do
+	gen <- toGenericsName term
+	arg <- toVarName term
 	case m of
 		Vector		-> do
 			return ("list_to_generic_list (" 
 				++ arg ++ ", " ++ gen ++ ")")
 
+		-- TODO merge to avoid duplicate code
 		Optional		-> do
-			yesRule <- termToGenericsUse (Term l s Single)
-			opt <- toVarName (Term l s Single)
-			genOpt <- termToGenericsName (Term l s Single)
+			let t = (Term l s Single)
+			yesRule <- termToGenericsUse t
+			opt <- toVarName t
+			genOpt <- termToGenericsName t
+			typeName <- toDisjSubName t
 			return (
 				"("
-				++ "(" ++ arg ++ " = yes{" ++ opt ++ "},\n\t"
-				++ yesRule ++ ",\n\t"
-				++ gen ++ " = gmaybe{yes{" ++ genOpt ++ "}})\n\t"
+					++ "(" ++ arg ++ " = yes{" ++ opt ++ "},\n\t"
+					++ yesRule ++ ",\n\t"
+					++ gen ++ " = gmaybe{\"" ++ typeName ++ "\", yes{" ++ genOpt ++ "}})\n\t"
 				++ ";\n\t"
-				++ "(" ++ arg ++ " \\= yes{_},\n\t"
-				++ "" ++ gen ++ " = gmaybe{no}))")
+					++ "(" ++ arg ++ " \\= yes{_},\n\t"
+					++ "" ++ gen ++ " = gmaybe{\"" ++ typeName ++ "\", no})"
+				++ ")")
 
 
 		OptVector -> do
-			opt <- toVarName (Term l s Vector)
-			yesRule <- termToGenericsUse (Term l s Vector)
-			genOpt <- termToGenericsName (Term l s Vector)
+			let t = (Term l s Vector)
+			yesRule <- termToGenericsUse t
+			opt <- toVarName t
+			genOpt <- termToGenericsName t
+			typeName <- toDisjSubName t
 		
 			return (
 				"("
-				++ "(" ++ arg ++ " = yes{" ++ opt ++ "},\n\t"
-				++ yesRule ++ ",\n\t"
-				++ gen ++ " = gmaybe{yes{" ++ genOpt ++ "}})\n\t"
+					++ "(" ++ arg ++ " = yes{" ++ opt ++ "},\n\t"
+					++ yesRule ++ ",\n\t"
+					++ gen ++ " = gmaybe{\"" ++ typeName ++ "\", yes{" ++ genOpt ++ "}})\n\t"
 				++ ";\n\t"
-				++ "(" ++ arg ++ " \\= yes{_},\n\t"
-				++ "" ++ gen ++ " = gmaybe{no}))")
+					++ "(" ++ arg ++ " \\= yes{_},\n\t"
+					++ "" ++ gen ++ " = gmaybe{\"" ++ typeName ++ "\", no})"
+				++ ")")
 	
 		otherwise	-> return (
 			"to_node (any{" ++ arg ++ "}, NODE_" ++ arg ++ "),\n"
 			++ "\tto_generic (NODE_" ++ arg ++ ", " ++ gen ++ ")")
 	
 
-termToGenericsUse (Marker l m) = do
-	arg <- toVarName (Marker l m)
-	gen <- toGenericsName (Marker l m)
-	return (gen ++ " = gmarker {" ++ arg ++ "}")
+
+termToGenericsUse mark@(Marker Nothing m) = do 
+	arg <- toVarName mark
+	gen <- toGenericsName mark
+	return (gen ++ " = gmarker {\"" ++ m ++ "\", " ++ arg ++ "}")
+
+termToGenericsUse mark@(Marker (Just n) _) = do 
+	arg <- toVarName mark
+	gen <- toGenericsName mark
+	return (gen ++ " = gmarker {\"" ++ n ++ "\", " ++ arg ++ "}")
+
 
 symbolToGenericsUse :: Symbol a -> MakeTeaMonad (Name Class)
 symbolToGenericsUse (NonTerminal n) = do
 	return (map toUpper n)
-symbolToGenericsUse (Terminal n ctype) = do
-	gen <- toGenericsName (Terminal n ctype)
-	arg <- toVarName (Terminal n ctype)
+symbolToGenericsUse t@(Terminal n ctype) = do
+	gen <- toGenericsName t
+	arg <- toVarName t
 	let gentype = toClpaPrimType ctype
 	return (gen ++ " = g" ++ gentype ++ " {" ++ arg ++ "}")
 
