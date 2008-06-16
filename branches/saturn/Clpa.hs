@@ -486,7 +486,8 @@ termToGenericsUse (Term l s m) = do
 				++ yesRule ++ ",\n\t"
 				++ gen ++ " = gmaybe{yes{" ++ genOpt ++ "}})\n\t"
 				++ ";\n\t"
-				++ "(" ++ gen ++ " = gmaybe{no}))")
+				++ "(" ++ arg ++ " \\= yes{_},\n\t"
+				++ "" ++ gen ++ " = gmaybe{no}))")
 
 
 		OptVector -> do
@@ -500,7 +501,8 @@ termToGenericsUse (Term l s m) = do
 				++ yesRule ++ ",\n\t"
 				++ gen ++ " = gmaybe{yes{" ++ genOpt ++ "}})\n\t"
 				++ ";\n\t"
-				++ "(" ++ gen ++ " = gmaybe{no}))")
+				++ "(" ++ arg ++ " \\= yes{_},\n\t"
+				++ "" ++ gen ++ " = gmaybe{no}))")
 	
 		otherwise	-> return (
 			"to_node (any{" ++ arg ++ "}, NODE_" ++ arg ++ "),\n"
