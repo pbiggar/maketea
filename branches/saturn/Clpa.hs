@@ -179,32 +179,28 @@ createConjToNodes :: Rule Conj -> MakeTeaMonad String
 createConjToNodes (Conj head body) = do
 	constructor <- toConstructor head
 	subName <- toDisjSubName head
-	return $ flattenWith "\n\t" [
-		"to_node (ANY, NODE) :- ",
-		"ANY = any{" ++ constructor ++ "{ID}},",
-		"NODE = node_" ++ subName ++ "{" ++ constructor ++ "{ID}}.\n"]
+	return $ 
+		"to_node (any{" ++ constructor ++ "{ID}}, node_" ++ subName ++ "{" ++ constructor ++ "{ID}}) :- ."
 
 createDisjToNodes :: Rule Disj -> MakeTeaMonad String
 createDisjToNodes (Disj head body) = do
 	baseName <- toDisjBaseName head
-	inst <- concreteInstances head -- TODO should this be allInstances?
+	inst <- concreteInstances head
 	body <- forM inst $ \term -> do -- TODO if it doesnt equal Node
 		subName <- toDisjSubName term
 		constructor <- toConstructor term
-		return $ flattenWith "\n\t" [
-			"to_node (ANY, NODE) :- ",
-			"ANY = any{" ++ baseName ++ "_" ++ subName ++ "{" ++ constructor ++ "{ID}}},",
-			"NODE = node_" ++ subName ++ "{" ++ constructor ++ "{ID}}." ]
-	return $ flattenWith "\n\n" body
+		return $ 
+			"to_node (any{" ++ baseName ++ "_" ++ subName ++ "{ID}}, node_" ++ subName ++ "{ID}) :- ."
+			
+	return $ if baseName == "node" then "" -- we dont need node_ rules.
+				else flattenWith "\n" body
 
 createTokenToNodes :: Symbol Terminal -> MakeTeaMonad String
 createTokenToNodes t = do
 	constructor <- toConstructor t 
 	subName <- toDisjSubName t
-	return $ flattenWith "\n\t" [
-		"to_node (ANY, NODE) :- ",
-		"ANY = any{" ++ constructor ++ "{ID}},",
-		"NODE = node_" ++ subName ++ "{" ++ constructor ++ "{ID}}.\n"]
+	return $ 
+		"to_node (any{" ++ constructor ++ "{ID}}, node_" ++ subName ++ "{" ++ constructor ++ "{ID}}) :- ."
 
 
 {-
