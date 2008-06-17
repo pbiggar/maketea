@@ -483,7 +483,7 @@ termToGenericsUse term@(Term l s m) = do
 termToGenericsUse mark@(Marker Nothing m) = do 
 	arg <- toVarName mark
 	gen <- toGenericsName mark
-	return (gen ++ " = gmarker {\"" ++ m ++ "\", " ++ arg ++ "}")
+	return (gen ++ " = gmarker {\"is_" ++ m ++ "\", " ++ arg ++ "}")
 
 termToGenericsUse mark@(Marker (Just n) _) = do 
 	arg <- toVarName mark
