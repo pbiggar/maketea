@@ -435,7 +435,8 @@ termToGenericsUse term@(Term l s m) = do
 	arg <- toVarName term
 	case m of
 		Vector		-> do
-			return ("list_to_generic_list (" 
+			typeName <- toDisjSubName (Term l s Single)
+			return ("list_to_generic_list (\"" ++ typeName ++ "\", "
 				++ arg ++ ", " ++ gen ++ ")")
 
 		-- TODO merge to avoid duplicate code
