@@ -19,13 +19,11 @@ import MakeTeaMonad
 
 clpaDefinition :: MakeTeaMonad String 
 clpaDefinition = do
-	conjForwardDecls <- withConj $ mapM createConjForwardDecls
-	disjForwardDecls <- withDisj $ mapM createDisjForwardDecls
+	conjForwardDecls <- withConj $ mapM createForwardDecls
+	disjForwardDecls <- withDisj $ mapM createForwardDecls
 	tokenDecls <- withTokens $ mapM createTokenDecls
 	conjTypes <- withConj $ mapM createConjTypes
 	disjTypes <- withDisj $ mapM createDisjTypes
-	conjPreds <- withConj $ mapM createConjPreds
-	tokenPreds <- withTokens $ mapM createTokenPreds
 	conjToNodes <- withConj $ mapM createConjToNodes
 	disjToNodes <- withDisj $ mapM createDisjToNodes
 	tokensToNodes <- withTokens $ mapM createTokenToNodes
@@ -52,11 +50,6 @@ clpaDefinition = do
 		, ""
  	 	, unlines (reverse disjTypes)
 		, ""
-		, ""
-		, "% Predicates"
-		, unlines conjPreds
-		, ""
-		, unlines tokenPreds
 		, ""
 		, ""
 		, "% Generics"
@@ -95,27 +88,6 @@ checkForKeywords n prefix =
 		else n
 
 
-{-
- - IR Predicates
- -}
-createConjPreds :: Rule Conj -> MakeTeaMonad String
-createConjPreds (Conj head body) = do
-	predName <- toPredName head
-	typeName <- toTypeName head
-	args <- forM body $ \term -> do
-		argType <- elim termToTypeName term
-		arg <- toVarName term
-		return (arg ++ ":" ++ argType)
-	let allArgs = ("ID:" ++ typeName):args
-	return $ "predicate " ++ predName ++ " (" ++ flattenComma (allArgs) ++ ")."
-
-createTokenPreds :: Symbol Terminal -> MakeTeaMonad String
-createTokenPreds (Terminal name ctype) = do
-	typeName <- toTypeName (Terminal name ctype)
-	predName <- toPredName (Terminal name ctype)
-	let primType = toClpaPrimType ctype
-	return $ "predicate " ++ predName ++ " (ID:" ++ typeName ++ ", VALUE:" ++ primType ++ ")."
-
 -- TODO make this more generic
 toClpaPrimType :: Maybe String -> String
 toClpaPrimType (Just "String*") = "string"
@@ -129,21 +101,21 @@ toClpaPrimType Nothing = "string"
 {-
  - Forward declarations
  -}
-createConjForwardDecls :: Rule Conj -> MakeTeaMonad String
-createConjForwardDecls (Conj head body) = do
+createForwardDecls :: Rule a -> MakeTeaMonad String
+createForwardDecls (Conj head body) = do
 	typeName <- toTypeName head
 	return $ "type " ++ typeName ++ "."
 
-createDisjForwardDecls :: Rule Disj -> MakeTeaMonad String
-createDisjForwardDecls (Disj head _) = do
+createForwardDecls (Disj head _) = do
 	typeName <- toTypeName head
 	return $ "type " ++ typeName ++ "."
 
 createTokenDecls :: Symbol Terminal -> MakeTeaMonad String
 createTokenDecls (Terminal name ctype) = do
 	typeName <- toTypeName (Terminal name ctype)
+	let primType = toClpaPrimType ctype
 	typeConstructor <- toConstructor (Terminal name ctype)
-	return $ "type " ++ typeName ++ " ::= " ++ typeConstructor ++ " { id }."
+	return $ "type " ++ typeName ++ " ::= " ++ typeConstructor ++ " { ID:id, VALUE:" ++ primType ++ " }."
 
 {-
  - Type declarations
@@ -152,7 +124,13 @@ createConjTypes :: Rule Conj -> MakeTeaMonad String
 createConjTypes (Conj head body) = do
 	constructorName <- toConstructor head
 	typeName <- toTypeName head
-	return $ "type " ++ typeName ++ " ::= " ++ constructorName ++ " { id }."
+	args <- forM body $ \term -> do
+		argType <- elim termToTypeName term
+		arg <- toVarName term
+		return (arg ++ ":" ++ argType)
+	let allArgs = "ID:id":args
+	return $ "type " ++ typeName ++ " ::= " ++ constructorName ++ " { " ++ (flattenWith ", " allArgs) ++ " }."
+
 
 createDisjTypes :: Rule Disj -> MakeTeaMonad String
 createDisjTypes (Disj head body) = do
@@ -179,8 +157,11 @@ createConjToNodes :: Rule Conj -> MakeTeaMonad String
 createConjToNodes (Conj head body) = do
 	constructor <- toConstructor head
 	subName <- toDisjSubName head
+	args <- forM body $ \term -> do toVarName term
+	let allArgs = "ID":args
 	return $ 
-		"to_node (any{" ++ constructor ++ "{ID}}, node_" ++ subName ++ "{" ++ constructor ++ "{ID}}) :- ."
+		"to_node (any{" ++ constructor ++ "{" ++ flattenComma allArgs ++ "}},\n\t"
+		++ "node_" ++ subName ++ "{" ++ constructor ++ "{" ++ flattenComma allArgs ++ "}}) :- ."
 
 createDisjToNodes :: Rule Disj -> MakeTeaMonad String
 createDisjToNodes (Disj head body) = do
@@ -200,43 +181,39 @@ createTokenToNodes t = do
 	constructor <- toConstructor t 
 	subName <- toDisjSubName t
 	return $ 
-		"to_node (any{" ++ constructor ++ "{ID}}, node_" ++ subName ++ "{" ++ constructor ++ "{ID}}) :- ."
+		"to_node (any{" ++ constructor ++ "{ID, VALUE}}, node_" ++ subName ++ "{" ++ constructor ++ "{ID, VALUE}}) :- ."
 
 
 {-
  - Visitors
  -}
-createConjVisitors:: Rule Conj -> MakeTeaMonad String
+
+createVisitor :: Symbol a -> [String] -> [String] -> [String] -> MakeTeaMonad String
+createVisitor term args genArgs argGenerics = do
+	let allArgs = "_":args
+	predName <- toPredName term
+	typeName <- toDisjSubName term
+	return $ 
+			"to_generic (node_" ++ typeName ++ "{NODE}, GENERIC) :-\n\t"
+			++ (flattenWith ",\n\t" ([
+			"NODE = " ++ predName ++ " { " ++ flattenComma allArgs ++ " } "
+			] ++ argGenerics ++ [
+			"GENERIC = gnode{node_" ++ typeName ++ "{NODE}, \"" ++ typeName ++ "\", [" ++ flattenComma genArgs ++ "]}.\n"]))
+
+createConjVisitors:: Rule Conj -> MakeTeaMonad (String)
 createConjVisitors (Conj head body) = do
-	prefix <- getPrefix
-	predName <- toPredName head
-	typeName <- toDisjSubName head
 	argGenerics <- forM body $ \term -> do toGenericsUse term
 	genArgs <- forM body $ \term -> do toGenericsName term
 	args <- forM body $ \term -> do toVarName term
-	typeName <- toDisjSubName head
-	let allArgs = "ID":args
-	return $ "to_generic (NODE, GENERIC) :-\n\t" ++ (flattenWith ",\n\t" ([
-		  prefix ++ "()->" ++ predName ++ "(" ++ (flattenComma allArgs) ++ ")"
-		, "to_node (any{ID}, NODE)"
-		] ++ argGenerics ++ [
-		"GENERIC = gnode{NODE, \"" ++ typeName ++ "\", [" ++ flattenComma genArgs ++ "]}.\n"]))
-
+	createVisitor head args genArgs argGenerics 
+	
 createTokenVisitors :: Symbol Terminal -> MakeTeaMonad String
-createTokenVisitors (Terminal name ctype) = do
-	let t = (Terminal name ctype)
-	prefix <- getPrefix
-	predName <- toPredName t
+createTokenVisitors t@(Terminal name ctype) = do
 	genericUse <- toGenericsUse t
 	arg <- toVarName t
 	genArg <- toGenericsName t
-	typeName <- toDisjSubName t 
-	return $ "to_generic (NODE, GENERIC) :-\n\t" ++ flattenWith ",\n\t" [
-		  prefix ++ "()->" ++ predName ++ "(ID, " ++ arg ++ ")"
-		, "to_node (any{ID}, NODE)"
-		, genericUse
-		, "GENERIC = gnode{NODE, \"" ++ typeName ++ "\", [" ++ genArg ++ "]}.\n"]
-
+	createVisitor t [arg] [genArg] [genericUse] 
+	
 
 
 {- Turn types into Predicate names -}
@@ -255,7 +232,7 @@ instance ToPredName (Term NonMarker) where
 
 symbolToPredName :: Symbol a -> MakeTeaMonad (Name Class) -- TODO Class?
 symbolToPredName (NonTerminal n) = do
-	return (checkForKeywords (lowerFirstChar (n)) "p")
+	return (checkForKeywords (lowerFirstChar (n)) "t")
 symbolToPredName (Terminal n _) = do
 	return (checkForKeywords (lowerFirstChar (n)) "p")
 
@@ -357,8 +334,8 @@ instance ToConstructor (Term NonMarker) where
 	toConstructor = termToConstructor
 
 symbolToConstructor :: Symbol a -> MakeTeaMonad (Name Class)
-symbolToConstructor (NonTerminal n) = do return (checkForKeywords (lowerFirstChar (n ++ "_id")) "t")
-symbolToConstructor (Terminal n _) = do return (checkForKeywords (lowerFirstChar (n ++ "_id")) "t") 
+symbolToConstructor (NonTerminal n) = do return (checkForKeywords (lowerFirstChar n) "t")
+symbolToConstructor (Terminal n _) = do return (checkForKeywords (lowerFirstChar n) "t") 
 
 termToConstructor :: Term a -> MakeTeaMonad CType 
 termToConstructor (Term _ s _) = do
