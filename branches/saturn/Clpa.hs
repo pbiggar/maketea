@@ -24,9 +24,9 @@ clpaDefinition = do
 	tokenDecls <- withTokens $ mapM createTokenDecls
 	conjTypes <- withConj $ mapM createConjTypes
 	disjTypes <- withDisj $ mapM createDisjTypes
-	conjToNodes <- withConj $ mapM createConjToNodes
-	disjToNodes <- withDisj $ mapM createDisjToNodes
-	tokensToNodes <- withTokens $ mapM createTokenToNodes
+	conjGenerics <- withConj $ mapM createConjGenerics
+	disjGenerics <- withDisj $ mapM createDisjGenerics
+	tokensGenerics <- withTokens $ mapM createTokenGenerics
 	conjVisitors <- withConj $ mapM createConjVisitors
 	tokenVisitors <- withTokens $ mapM createTokenVisitors
 	prefix <- getPrefix
@@ -54,12 +54,11 @@ clpaDefinition = do
 		, ""
 		, "% Generics"
 		, ""
-		, "% Type Casts"
-		, unlines conjToNodes
+		, unlines conjGenerics
 		, ""
-		, unlines disjToNodes
+		, unlines disjGenerics
 		, ""
-		, unlines tokensToNodes
+		, unlines tokensGenerics
 		, ""
 		, ""
 		, "% Data visitors"
@@ -153,18 +152,19 @@ createDisjTypes (Disj head body) = do
  - Generics
  -}
 
-createConjToNodes :: Rule Conj -> MakeTeaMonad String
-createConjToNodes (Conj head body) = do
+createConjGenerics :: Rule Conj -> MakeTeaMonad String
+createConjGenerics (Conj head body) = do
 	constructor <- toConstructor head
 	disjName <- toDisj head "node"
 	args <- forM body $ \term -> do toVarName term
 	let allArgs = "ID":args
 	return $ 
 		"to_node (any{" ++ constructor ++ "{" ++ flattenComma allArgs ++ "}},\n\t"
-		++ disjName ++ "{" ++ constructor ++ "{" ++ flattenComma allArgs ++ "}}) :- ."
+		++ disjName ++ "{" ++ constructor ++ "{" ++ flattenComma allArgs ++ "}}) :- .\n"
+		++ "get_id (" ++ disjName ++ "{" ++ constructor ++ "{" ++ flattenComma allArgs ++ "}}, ID) :- .\n"
 
-createDisjToNodes :: Rule Disj -> MakeTeaMonad String
-createDisjToNodes (Disj head body) = do
+createDisjGenerics :: Rule Disj -> MakeTeaMonad String
+createDisjGenerics (Disj head body) = do
 	baseName <- toDisjBaseName head
 	inst <- concreteInstances head
 	body <- forM inst $ \term -> do -- TODO if it doesnt equal Node
@@ -173,16 +173,18 @@ createDisjToNodes (Disj head body) = do
 		constructor <- toConstructor term
 		return $ 
 			"to_node (any{" ++ baseDisjName ++ "{ID}}, " ++ nodeDisjName ++ "{ID}) :- ."
+			-- No get_id here since we only need it for Nodes
 			
 	return $ if baseName == "node" then "" -- we dont need node_ rules.
 				else flattenWith "\n" body
 
-createTokenToNodes :: Symbol Terminal -> MakeTeaMonad String
-createTokenToNodes t = do
+createTokenGenerics :: Symbol Terminal -> MakeTeaMonad String
+createTokenGenerics t = do
 	constructor <- toConstructor t 
 	disjName <- toDisj t "node"
-	return $ 
-		"to_node (any{" ++ constructor ++ "{ID, VALUE}}, " ++ disjName ++ "{" ++ constructor ++ "{ID, VALUE}}) :- ."
+	return $  
+		"to_node (any{" ++ constructor ++ "{ID, VALUE}}, " ++ disjName ++ "{" ++ constructor ++ "{ID, VALUE}}) :- .\n" ++
+		"get_id (" ++ disjName ++ "{" ++ constructor ++ "{ID, _}}, ID) :- .\n"
 
 
 {-
