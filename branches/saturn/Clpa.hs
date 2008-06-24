@@ -339,8 +339,8 @@ instance ToConstructor (Term NonMarker) where
 	toConstructor = termToConstructor
 
 symbolToConstructor :: Symbol a -> MakeTeaMonad (Name Class)
-symbolToConstructor (NonTerminal n) = do return (checkForKeywords (lowerFirstChar n) "t")
-symbolToConstructor (Terminal n _) = do return (checkForKeywords (lowerFirstChar n) "t") 
+symbolToConstructor (NonTerminal n) = do return (checkForKeywords (lowerFirstChar n) "c")
+symbolToConstructor (Terminal n _) = do return (checkForKeywords (lowerFirstChar n) "c") 
 
 termToConstructor :: Term a -> MakeTeaMonad CType 
 termToConstructor (Term _ s _) = do
