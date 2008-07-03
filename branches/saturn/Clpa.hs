@@ -96,6 +96,11 @@ toClpaPrimType (Just "double") = "float"
 toClpaPrimType (Just "") = "null"
 toClpaPrimType Nothing = "string"
 
+hasPrimArg :: Maybe String -> Bool 
+hasPrimArg (Just "") = False -- NULLs have no argument
+hasPrimArg (Just _) = True -- Anything else
+hasPrimArg Nothing = True
+
 
 {-
  - Forward declarations
@@ -110,11 +115,15 @@ createForwardDecls (Disj head _) = do
 	return $ "type " ++ typeName ++ "."
 
 createTokenDecls :: Symbol Terminal -> MakeTeaMonad String
-createTokenDecls (Terminal name ctype) = do
-	typeName <- toTypeName (Terminal name ctype)
+createTokenDecls t@(Terminal name ctype) = do
+	typeName <- toTypeName t
+	typeConstructor <- toConstructor t
 	let primType = toClpaPrimType ctype
-	typeConstructor <- toConstructor (Terminal name ctype)
-	return $ "type " ++ typeName ++ " ::= " ++ typeConstructor ++ " { ID:id, VALUE:" ++ primType ++ " }."
+	let primStr = if hasPrimArg ctype
+		then ", VALUE:" ++ primType 
+		else "" -- No parameters for null
+		
+	return $ "type " ++ typeName ++ " ::= " ++ typeConstructor ++ " { ID:id" ++ primStr ++ "}."
 
 {-
  - Type declarations
@@ -179,12 +188,16 @@ createDisjGenerics (Disj head body) = do
 				else flattenWith "\n" body
 
 createTokenGenerics :: Symbol Terminal -> MakeTeaMonad String
-createTokenGenerics t = do
+createTokenGenerics t@(Terminal _ ctype) = do
 	constructor <- toConstructor t 
 	disjName <- toDisj t "node"
+	let (value, anon) = if hasPrimArg ctype 
+						then (", VALUE", ", _")
+						else ("", "")
+
 	return $  
-		"to_node (any{" ++ constructor ++ "{ID, VALUE}}, " ++ disjName ++ "{" ++ constructor ++ "{ID, VALUE}}) :- .\n" ++
-		"get_id (" ++ disjName ++ "{" ++ constructor ++ "{ID, _}}, ID) :- .\n"
+		"to_node (any{" ++ constructor ++ "{ID" ++ value ++ "}}, " ++ disjName ++ "{" ++ constructor ++ "{ID" ++ value ++ "}}) :- .\n" ++
+		"get_id (" ++ disjName ++ "{" ++ constructor ++ "{ID" ++ value ++ "}}, ID) :- .\n"
 
 
 {-
@@ -216,7 +229,9 @@ createTokenVisitors t@(Terminal name ctype) = do
 	genericUse <- toGenericsUse t
 	arg <- toVarName t
 	genArg <- toGenericsName t
-	createVisitor t [arg] [genArg] [genericUse] 
+	if hasPrimArg ctype
+		then createVisitor t [arg] [genArg] [genericUse] 
+		else createVisitor t [] [genArg] [genericUse] 
 	
 
 
@@ -462,7 +477,9 @@ symbolToGenericsUse t@(Terminal n ctype) = do
 	gen <- toGenericsName t
 	arg <- toVarName t
 	let gentype = toClpaPrimType ctype
-	return (gen ++ " = g" ++ gentype ++ " {" ++ arg ++ "}")
+	if hasPrimArg ctype
+		then return (gen ++ " = g" ++ gentype ++ " {" ++ arg ++ "}")
+		else return (gen ++ " = g" ++ gentype)
 
 
 
